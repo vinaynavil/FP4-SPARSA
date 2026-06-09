@@ -20,21 +20,32 @@ The project includes both the **RTL hardware design** (Verilog) and a **Python s
 ┌─────────────────────────────────────────────┐
 │           fp4_sparsa_4x4 (Top)              │
 │                                             │
-│   ┌─────────────────────────────────────┐   │
-│   │         systolic_array (4×4)        │   │
-│   │                                     │   │
-│   │  ┌──────────┐   ┌──────────┐        │   │
-│   │  │pe_pipelined│ │pe_pipelined│ ...  │   │
-│   │  │ (3-stage) │ │ (3-stage) │        │   │
-│   │  │           │ │           │        │   │
-│   │  │ fp4_decode│ │ fp4_decode│        │   │
-│   │  │ 4-lane MAC│ │ 4-lane MAC│        │   │
-│   │  │ Wallace   │ │ Wallace   │        │   │
-│   │  │ tree add  │ │ tree add  │        │   │
-│   │  │ sparsity  │ │ sparsity  │        │   │
-│   │  │ detector  │ │ detector  │        │   │
-│   │  └──────────┘   └──────────┘        │   │
-│   └─────────────────────────────────────┘   │
+│  ┌──────────────┐   ┌────────────────────┐  │
+│  │  AXI-Lite    │   │   BRAM Weight      │  │
+│  │  Control     │   │   Buffer           │  │
+│  │  (slave)     │   │   (8×128-bit)      │  │
+│  └──────┬───────┘   └────────┬───────────┘  │
+│         │                    │              │
+│  ┌──────▼────────────────────▼───────────┐  │
+│  │         systolic_array (4×4)          │  │
+│  │                                       │  │
+│  │  ┌──────────┐   ┌──────────┐          │  │
+│  │  │pe_pipelined│ │pe_pipelined│  ...   │  │
+│  │  │ (5-stage) │ │ (5-stage) │          │  │
+│  │  │           │ │           │          │  │
+│  │  │ fp4_decode│ │ fp4_decode│          │  │
+│  │  │ 4-lane MAC│ │ 4-lane MAC│          │  │
+│  │  │ Wallace   │ │ Wallace   │          │  │
+│  │  │ tree add  │ │ tree add  │          │  │
+│  │  │ sparsity  │ │ sparsity  │          │  │
+│  │  │ detector  │ │ detector  │          │  │
+│  │  └──────────┘   └──────────┘          │  │
+│  └───────────────────────────────────────┘  │
+│         ▲                                   │
+│  ┌──────┴───────┐                           │
+│  │  Activation  │                           │
+│  │  Input FIFO  │                           │
+│  └──────────────┘                           │
 └─────────────────────────────────────────────┘
 ```
 
@@ -45,6 +56,9 @@ The project includes both the **RTL hardware design** (Verilog) and a **Python s
 - **128-bit two-phase weight loading** — TPU-style pre-decoded weight registers
 - **18-bit accumulator** — includes guard bit with saturating output
 - **Runtime reconfigurability** — `sparse_en` port enables/disables zero-skipping without bitstream reload
+- **BRAM weight buffer** — weights stored on-chip, loaded once, reused across activations
+- **Activation input FIFO** — row-by-row dataflow-aware activation feeding
+- **AXI-Lite control interface** — standard CPU-to-accelerator register map
 
 ---
 
@@ -54,17 +68,52 @@ The project includes both the **RTL hardware design** (Verilog) and a **Python s
 |---|---|
 | **Target Device** | Xilinx Kintex-7 (xc7k160tfbg676-2) |
 | **Clock Frequency** | 350 MHz |
-| **WNS** | +0.078 ns |
+| **WNS** | +0.079 ns |
 | **DSP48E1 Usage** | 64 (10.67%) |
-| **LUT Usage** | 1,546 (1.52%) |
-| **Flip-Flop Usage** | 2,014 (0.99%) |
-| **Dynamic Power** | 0.051 W |
-| **Total Power** | 0.162 W |
+| **LUT Usage** | 1,926 (1.89%) |
+| **Flip-Flop Usage** | 2,899 (1.42%) |
+| **BRAM Usage** | 2 |
+| **Dynamic Power** | 0.058 W |
+| **Total Power** | 0.170 W |
 | **Throughput** | 44.8 GOPS |
-| **Efficiency** | 276.5 GOPS/W |
-| **Testbench** | 12/12 self-checking TCs pass |
+| **Efficiency** | 263.5 GOPS/W |
+| **Testbench** | 17/17 self-checking TCs pass |
 
-**Tool:** Vivado 2024.2 | `phys_opt_design=ExploreWithRemap` | MREG=1 on DSP48E1
+**Tool:** Vivado 2024.2 | `phys_opt_design=ExploreWithRemap` | MREG=1, AREG=1 on all DSP48E1
+
+---
+
+## Implemented Upgrades
+
+### 1. BRAM Weight Buffer
+
+On-chip weight storage using Xilinx block RAM, replacing port-driven weight delivery.
+
+- **Configuration:** 8×128-bit BRAM, `ram_style="block"`
+- **Benefit:** Weights loaded once and reused across all activation inputs — matches the behaviour of a real inference accelerator
+- **Dataflow:** Ping-pong weight buffers allow weight loading and MAC execution to overlap
+
+### 2. Activation Input FIFO
+
+A dedicated FIFO feeds activations into the systolic array row-by-row.
+
+- **Benefit:** Decouples the host data supply rate from the array's internal pipeline timing
+- **Dataflow awareness:** Demonstrates explicit streaming dataflow at the hardware boundary
+- **Interface:** Standard valid/ready handshake
+
+### 3. AXI-Lite Control Interface
+
+A minimal AXI-Lite slave register map provides CPU-to-accelerator control — the standard interface for Zynq/Kintex SoC integration.
+
+| Register | Offset | Description |
+|---|---|---|
+| `CTRL` | `0x00` | Start bit, `sparse_en` |
+| `STATUS` | `0x08` | Done flag |
+| `WADDR` | `0x08` | Weight BRAM write address |
+| `WDATA_LO` | `0x0C` | Weight data [31:0] |
+| `WDATA_HI` | `0x10` | Weight data [63:32] |
+
+> These three upgrades collectively bring the design from a standalone MAC array to a complete accelerator subsystem with on-chip storage, dataflow-aware input, and a standard control interface.
 
 ---
 
@@ -135,12 +184,12 @@ tkinter (built-in)
 ```
 FP4-SPARSA/
 ├── rtl/
-│   ├── fp4_sparsa_4x4.v      # Top-level module
+│   ├── fp4_sparsa_4x4.v      # Top-level module (AXI-Lite + BRAM + FIFO)
 │   ├── systolic_array.v      # 4×4 systolic array
 │   ├── pe_pipelined.v        # PE: 4-lane FP4 MAC + sparsity detector
 │   └── fp4_decoder.v         # FP4 E2M1 decoder with FTZ
 ├── tb/
-│   └── tb_fp4_sparsa_4x4.v   # Self-checking testbench (12 TCs)
+│   └── tb_fp4_sparsa_4x4.v   # Self-checking testbench (17 TCs)
 ├── constraints/
 │   └── fp4_sparsa.xdc        # XDC timing + physical constraints
 ├── python_demo/
@@ -172,7 +221,6 @@ Related prior work:
 
 **Vinay Navil C N**  
 M.Sc. Electronics — Hemagangothri, Hassan University (2026)  
-  
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-vinaynavil-blue)](https://www.linkedin.com/in/vinaynavil/)
 [![GitHub](https://img.shields.io/badge/GitHub-vinaynavil-black)](https://github.com/vinaynavil)
