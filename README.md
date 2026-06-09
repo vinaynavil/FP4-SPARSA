@@ -1,3 +1,4 @@
+<meta name="google-site-verification" content="818WzEt_LHBOTPGBvJDV6GWr8nLYf9EhoDYlegvFvAM" />
 # FP4-SPARSA: Sparsity-Aware FP4 Systolic Array MAC Accelerator
 
 > **MSc Final Project** — Hemagangothri, Hassan University (2026)  
