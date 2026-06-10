@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================
 // Module : systolic_array
-// Project : FP4-SPARSA v18
+// Project : FP4-SPARSA v19
 //
 // FIX vs v16/v17:
 //   - acc_wire[r+1][c] routing corrected: generate loop for cols

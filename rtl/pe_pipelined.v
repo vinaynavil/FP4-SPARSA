@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 // ============================================================
 // Module : pe_pipelined
-// Project : FP4-SPARSA v18
+// Project : FP4-SPARSA v19
 //
 // Pipeline: 5 cycles end-to-end
 //   Stage 1  : operand register (w_op, a_op, acc, lane_zero)

@@ -67,6 +67,8 @@ module tb_weight_bram;
         .sparse_act_count (sparse_act_count_i),
         .sparse_wgt_count (sparse_wgt_count_i),
         .sat_flags        (sat_flags_i),
+        .fifo_full        (1'b0),
+        .fifo_empty       (1'b1),
         .sparse_en        (sparse_en),
         .mode             (mode),
         .bank_switch      (bank_switch),
@@ -124,14 +126,12 @@ module tb_weight_bram;
         $display("  PASS");
 
         // ---- TC2: Write word 0 to BRAM ----
-        // WDATA_LO lower 32: 0xDEADBEEF
-        // WDATA_LO upper 32: 0xCAFEBABE
-        // WDATA_HI        : 0x12345678 -> triggers write at addr 0
+        // Full sequence: 3x WDATA_LO (96 bits) + WDATA_HI (commit)
         $display("TC2: Write BRAM word 0");
         axi_write(5'h0C, 32'hDEADBEEF);  // lo[31:0]
-        // lo[63:32] — write again to same addr (upper half)
-        // For simplicity this TB uses the lower 32 bits only
-        axi_write(5'h10, 32'h12345678);  // hi -> triggers BRAM write
+        axi_write(5'h0C, 32'hCAFEBABE);  // lo[63:32]
+        axi_write(5'h0C, 32'hA5A5A5A5);  // lo[95:64]
+        axi_write(5'h10, 32'h12345678);  // hi[127:96] -> triggers BRAM write
 
         // Wait for BRAM write to propagate
         repeat(3) @(posedge clk);
@@ -140,16 +140,18 @@ module tb_weight_bram;
         bram_raddr = 3'd0;
         repeat(2) @(posedge clk);  // BRAM registered output latency
 
-        $display("  BRAM dout[127:96] = 0x%08X (expect 0x12345678)", bram_dout[127:96]);
-        if (bram_dout[127:96] !== 32'h12345678) begin
+        $display("  BRAM dout = 0x%032X", bram_dout);
+        if (bram_dout !== 128'h12345678_A5A5A5A5_CAFEBABE_DEADBEEF) begin
             $display("  FAIL"); errors = errors + 1;
         end else
             $display("  PASS");
 
         // ---- TC3: Verify WADDR auto-incremented to 1 ----
         $display("TC3: Check WADDR auto-increment");
-        // Write another word — should go to addr 1
+        // Write another word - should go to addr 1
         axi_write(5'h0C, 32'hAABBCCDD);
+        axi_write(5'h0C, 32'h55667788);
+        axi_write(5'h0C, 32'h99AABBCC);
         axi_write(5'h10, 32'h11223344);
         repeat(3) @(posedge clk);
         bram_raddr = 3'd1;
