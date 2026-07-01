@@ -62,3 +62,4 @@ set_switching_activity \
 set_switching_activity \
     -toggle_rate 0.100 -static_probability 0.150 \
     [get_ports -filter {DIRECTION == OUT}]
+
