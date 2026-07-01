@@ -1,14 +1,11 @@
-## FP4-SPARSA constraints
 ## ============================================================
-##  fp4_sparsa_4x4.xdc  (v18)
+##  fp4_sparsa_4x4.xdc  (v19)
 ##  Target  : xc7k160tfbg676-2
 ##  Design  : fp4_sparsa_4x4
 ##
-##  Changes from v16 XDC:
-##    - Removed bogus set_case_analysis on s_axi_aclk pin
-##    - Fixed false path: rst -> s_axi_aresetn (no rst port)
-##    - Fixed switching activity port names: clk/rst ->
-##      s_axi_aclk/s_axi_aresetn
+## had set_case_analysis on the clk pin from an old copy paste, removed
+## rst -> s_axi_aresetn false path was wrong (no rst port anymore)
+## switching activity ports were still named clk/rst, fixed to match
 ## ============================================================
 
 ## ── Device configuration ─────────────────────────────────────
@@ -31,7 +28,7 @@ set_false_path -from [get_ports s_axi_aresetn]
 ##   vertically adjacent DSPs in the PE accumulator chain.
 ##   Without MREG=1 the 3.001 ns cascade delay violates 350 MHz.
 ##
-## AREG=1: pipelines A-input of the Wallace tree adder DSPs
+## AREG=1: pipelines A-input of the pairwise adder tree DSPs
 ##   (wt_l1_hi_s3a and wt_l1_lo_s3a registered in Stage 3a).
 ##   Fixes DPIP-1 DRC warning and removes the LUT->DSP.A
 ##   combinational path. With MREG+AREG the full Stage2->Stage3a

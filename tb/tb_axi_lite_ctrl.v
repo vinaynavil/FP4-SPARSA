@@ -127,6 +127,27 @@ module tb_axi_lite_ctrl;
         end
     endtask
 
+    // AXI write task - W asserted one cycle before AW (W-before-AW ordering)
+    task axi_write_w_first;
+        input [4:0]  addr;
+        input [31:0] data;
+        begin
+            @(posedge clk);
+            wdata   <= data; wvalid <= 1;
+            wstrb   <= 4'hF; bready <= 1;
+            @(posedge clk);
+            awaddr  <= addr; awvalid <= 1;
+            @(posedge clk);
+            while (!awready) @(posedge clk);
+            awvalid <= 0;
+            while (!wready) @(posedge clk);
+            wvalid <= 0;
+            while (!bvalid) @(posedge clk);
+            bready <= 0;
+            @(posedge clk);
+        end
+    endtask
+
     // AXI read task
     task axi_read;
         input  [4:0]  addr;
@@ -235,6 +256,15 @@ module tb_axi_lite_ctrl;
         @(posedge clk);
         if (sparse_en !== 0) begin
             $display("  FAIL: sparse_en still asserted"); errors=errors+1;
+        end else
+            $display("  PASS");
+
+        // ---- TC8: W-before-AW ordering (WADDR=7) ----
+        $display("TC8: W-before-AW ordering, WADDR=7");
+        axi_write_w_first(5'h08, 32'd7);
+        axi_read(5'h08, rd);
+        if (rd[2:0] !== 3'd7) begin
+            $display("  FAIL: WADDR readback=%0d (expect 7)", rd[2:0]); errors=errors+1;
         end else
             $display("  PASS");
 

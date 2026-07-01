@@ -6,18 +6,15 @@
 // Pipeline: 5 cycles end-to-end
 //   Stage 1  : operand register (w_op, a_op, acc, lane_zero)
 //   Stage 2  : 4 × 8×8 signed multiply → prod_s2[0:3]
-//   Stage 3a : Wallace tree level-1 partial sums (registered)
+//   Stage 3a : pairwise adder tree, level 1, partial sums (registered)
 //   Stage 3b : accumulate + saturate → acc_s3 (registered)
 //   Output   : acc_out = acc_s3 (wire, 0 extra cycles)
 //
-// FIX vs v16:
-//   - act_out: was latching act_pass_s3a (Stage 3a output),
-//     giving 4 cycles of delay instead of the 1-cycle skew
-//     required for systolic left-to-right propagation.
-//     FIXED: act_out now latches act_in directly in Stage 1
-//     (act_pass_s1), aligned with the operand pipeline.
-//     This is the correct behaviour for a weight-stationary
-//     systolic array where activations pass through in 1 cycle.
+// fixed act_out - was latching from stage 3a, gave 4 cycle delay
+// instead of the 1 cycle skew systolic needs. now latches act_in
+// straight in stage 1. (spent way too long on this one)
+// also fixed valid_out being 1 cycle behind acc_out - same root cause
+// removed lane_zero_s2, wasn't even used, just extra FFs
 //   - valid_out: was delayed one extra cycle beyond acc_out
 //     (valid_out ← valid_s3 ← valid_s3a; acc_out ← acc_s3).
 //     FIXED: valid_out now registered alongside acc_s3 in the
@@ -189,7 +186,7 @@ module pe_pipelined (
         end
     end
 
-    // ── Stage 3a: Wallace tree level-1 (registered) ─────────
+    // ── Stage 3a: pairwise adder tree, level 1 (registered) ─────
     // Two adder pairs → two 18-bit partial sums, registered to
     // break the DSP MREG=1 critical path.
     wire signed [17:0] wt_l1_hi_comb =

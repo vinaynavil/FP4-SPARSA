@@ -530,7 +530,7 @@ initial begin
         5'd0,5'd0,7'd0,4'b0000,8'd14);
 
     do_reset;
-    $display("--- TC15a: [U3] Act pre-decode  varied weights  a=+3.0  exp=504");
+    $display("--- TC15: [U3] Act pre-decode  varied weights  a=+3.0  exp=504");
     run_inference(
         128'h35466453436556344635536464533546,
         128'h63455436365445633654546345366345,
@@ -539,7 +539,7 @@ initial begin
         5'd0,5'd0,7'd0,4'b0000,8'd15);
 
     do_reset;
-    $display("--- TC15b: [U3] Act pre-decode  same varied weights  a=-4.0  exp=-672");
+    $display("--- TC16: [U3] Act pre-decode  same varied weights  a=-4.0  exp=-672");
     run_inference(
         128'h35466453436556344635536464533546,
         128'h63455436365445633654546345366345,

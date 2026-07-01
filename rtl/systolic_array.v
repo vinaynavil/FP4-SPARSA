@@ -3,27 +3,11 @@
 // Module : systolic_array
 // Project : FP4-SPARSA v19
 //
-// FIX vs v16/v17:
-//   - acc_wire[r+1][c] routing corrected: generate loop for cols
-//     0-2 already covers rows 0-3 correctly; row_c3 generate loop
-//     for col 3 covers rows 0-2; u_pe_r3c3 covers row3/col3.
-//     acc_wire[4][0..3] receive the bottom-row outputs → output.
-//     No change needed but verified and documented clearly.
-//   - act_dec_wire[r][c] for c=1..3: build_dec_word was called
-//     combinatorially in generate, duplicating the decode logic
-//     already present in each PE's input path. Since the PE itself
-//     receives act_wire[r][c] (the raw 16-bit value) AND act_dec_in
-//     (pre-decoded 32-bit), and act_dec_in for col>0 is built from
-//     act_wire[r][c] which is the act_out of the previous PE (a
-//     registered value), this path is correct - documented clearly.
-//   - valid_wire connection for rows 1-3 columns 0: was set to
-//     valid_in (combinatorial) for all rows. This is correct for
-//     weight-stationary (all rows receive same valid), but for
-//     correctness with the PE pipeline the valid must match the
-//     activation being presented. Confirmed correct, added comment.
-//   - Sparsity pre-register stage retained from v16 timing fix.
-//   - Dead wire `skip_wire` (driven but never read above PE level)
-//     left in place to preserve port interface; Vivado will trim it.
+// // checked acc_wire routing for row/col edge cases, looks right
+// act_dec_wire duplicate decode - looks redundant but is needed,
+// leave it (col>0 gets pre-decoded act from prev PE's act_out)
+// skip_wire is dead above PE level, vivado should trim it, not
+// removing the port for now
 // ============================================================
 module systolic_array (
     input  wire          clk,
