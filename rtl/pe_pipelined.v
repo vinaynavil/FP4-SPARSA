@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// ============================================================
+// =============================================================
 // Module : pe_pipelined
 // Project : FP4-SPARSA v19
 //
@@ -8,7 +8,7 @@
 //   Stage 2  : 4 × 8×8 signed multiply → prod_s2[0:3]
 //   Stage 3a : pairwise adder tree, level 1, partial sums (registered)
 //   Stage 3b : accumulate + saturate → acc_s3 (registered)
-//   Output   : acc_out = acc_s3 (wire, 0 extra cycles)
+//   Output   : acc_out = acc_s3 (wire, 0 extra cycles)  
 //
 // fixed act_out - was latching from stage 3a, gave 4 cycle delay
 // instead of the 1 cycle skew systolic needs. now latches act_in
