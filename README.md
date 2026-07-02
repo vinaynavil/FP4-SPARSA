@@ -1,3 +1,5 @@
+<meta name="google-site-verification" content="818WzEt_LHBOTPGBvJDV6GWr8nLYf9EhoDYlegvFvAM" />
+
 # FP4-SPARSA: Sparsity-Aware FP4 Systolic Array MAC Accelerator
 
 An FPGA accelerator for low-precision neural-network inference built around a **4×4 weight-stationary systolic array** and **FP4 E2M1** arithmetic.  
