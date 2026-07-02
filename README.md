@@ -76,9 +76,32 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 
 ### FP4 E2M1 format
 
-- 1 sign bit, 2 exponent bits, 1 mantissa bit → 16 representable values
+- 1 sign bit, 2 exponent bits, 1 mantissa bit → 16 representable codes
 - Subnormal exponent (`exp == 00`) → flushed to zero (FTZ), avoids subnormal handling in hardware
 - Values are scaled ×2 (Q1.1) before entering DSP multipliers for compatibility; descaled ÷4 in software post-accumulation
+
+#### FP4 E2M1 decoder table
+
+| Code (S E1E0 M) | Sign | Exp | Mant | FP4 value | Decoded operand (Q1.1 ×2) |
+|---|---|---|---|---|---|
+| `0000` | + | `00` | `0` | 0 | 0 |
+| `0001` | + | `00` | `1` | 0.5 (subnormal, **FTZ**) | 0 |
+| `0010` | + | `01` | `0` | 1.0 | 2 |
+| `0011` | + | `01` | `1` | 1.5 | 3 |
+| `0100` | + | `10` | `0` | 2.0 | 4 |
+| `0101` | + | `10` | `1` | 3.0 | 6 |
+| `0110` | + | `11` | `0` | 4.0 | 8 |
+| `0111` | + | `11` | `1` | 6.0 | 12 |
+| `1000` | − | `00` | `0` | −0 | 0 |
+| `1001` | − | `00` | `1` | −0.5 (subnormal, **FTZ**) | 0 |
+| `1010` | − | `01` | `0` | −1.0 | −2 |
+| `1011` | − | `01` | `1` | −1.5 | −3 |
+| `1100` | − | `10` | `0` | −2.0 | −4 |
+| `1101` | − | `10` | `1` | −3.0 | −6 |
+| `1110` | − | `11` | `0` | −4.0 | −8 |
+| `1111` | − | `11` | `1` | −6.0 | −12 |
+
+FTZ rows collapse the subnormal magnitude (0.5) to 0 before the value ever reaches the sparsity detector — this is why decode happens once at the array boundary rather than per-PE.
 
 ### Decode path
 
@@ -259,9 +282,8 @@ tkinter (built-in)
 FP4-SPARSA/
 ├── rtl/
 │   ├── fp4_sparsa_4x4.v
-│   ├── systolic_array.v
+│   ├── systolic_array.v      # includes decode_fp4 / build_dec_word
 │   ├── pe_pipelined.v
-│   ├── fp4_decoder.v
 │   ├── axi_lite_ctrl.v
 │   ├── weight_bram.v
 │   └── act_fifo.v
