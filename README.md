@@ -9,11 +9,11 @@ It combines **lane-wise zero-skipping**, **on-chip BRAM weight storage**, an **a
 
 FP4-SPARSA is a personal hardware project focused on making neural-network inference more efficient with:
 
-- **FP4 E2M1 quantisation**
-- **Per-lane sparsity detection and zero-skipping**
-- **Weight-stationary systolic execution**
-- **On-chip buffering for weights and activations**
-- **A practical FPGA implementation on Xilinx Kintex-7**
+- **FP4 E2M1 quantisation***
+- **Per-lane sparsity detection and zero-skipping***
+- **Weight-stationary systolic execution***
+- **On-chip buffering for weights and activations***
+- **A practical FPGA implementation on Xilinx Kintex-7***
 
 The repository includes both the **Verilog RTL** and a **Python demo** for FP4 quantisation and CIFAR-10 / ResNet-20 experimentation.
 
