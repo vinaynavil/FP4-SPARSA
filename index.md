@@ -2,7 +2,7 @@
 title: "FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array"
 ---
 
-# FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array
+# # [FP4-SPARSA](https://github.com/vinaynavil/FP4-SPARSA) — FP4-Sparse Precision Accelerator Using a Reconfigurable Systolic Array
 
 
 An FPGA accelerator for low-precision neural-network inference built around a **4×4 weight-stationary systolic array** and **FP4 E2M1** arithmetic.  
