@@ -1,14 +1,10 @@
 ---
-title: "FP4-SPARSA —FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array"
+title: "FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array"
 ---
 
 An FPGA accelerator for low-precision neural-network inference built around a **4×4 weight-stationary systolic array** and **FP4 E2M1** arithmetic.  
 It combines **lane-wise zero-skipping**, **on-chip BRAM weight storage**, an **activation FIFO**, and a lightweight **AXI-Lite control path** for a compact accelerator-style design.
 
----
-
-## What this project explores
-...
 ---
 
 ## What this project explores
