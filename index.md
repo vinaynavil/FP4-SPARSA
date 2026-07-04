@@ -1,341 +1,745 @@
----
-title: "FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array"
----
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array</title>
+<meta name="description" content="Sparsity-Aware FP4 Systolic Array MAC Accelerator — Verilog RTL + Python Demo | Kintex-7 FPGA | 350MHz | 44.8 GOPS">
+<link rel="canonical" href="https://vinaynavil.github.io/FP4-SPARSA/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --white:#ffffff;
+    --black:#000000;
+    --ink:#1d1d1f;
+    --gray:#86868b;
+    --gray-light:#f5f5f7;
+    --gray-line:#d2d2d7;
+    --blue:#0071e3;
+    --blue-hover:#0077ed;
+    --grad-a:#2997ff;
+    --grad-b:#a463f7;
+    --sans:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --mono:'Roboto Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; background:var(--white); color:var(--ink);
+    font-family:var(--sans); -webkit-font-smoothing:antialiased;
+    font-size:17px; line-height:1.47059;
+  }
+  a{color:var(--blue); text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .wrap{max-width:1000px; margin:0 auto; padding:0 22px;}
+  .wrap-narrow{max-width:760px; margin:0 auto; padding:0 22px;}
 
-# # [FP4-SPARSA](https://github.com/vinaynavil/FP4-SPARSA) — FP4-Sparse Precision Accelerator Using a Reconfigurable Systolic Array
+  /* ---- hero ---- */
+  .hero{
+    padding:90px 0 100px; text-align:center;
+    position:relative;
+  }
+  .hero-links{
+    display:flex; gap:28px; justify-content:center; flex-wrap:wrap;
+    list-style:none; margin:36px 0 0; padding:0;
+  }
+  .hero-links a{font-size:14px; color:var(--gray); font-weight:500;}
+  .hero-links a:hover{color:var(--ink); text-decoration:none;}
+  .hero-eyebrow{
+    font-size:15px; font-weight:600; color:var(--gray);
+    margin:0 0 14px; letter-spacing:0.01em;
+  }
+  .hero h1{
+    font-size:clamp(3rem, 9vw, 5.6rem);
+    font-weight:700; line-height:1.02; letter-spacing:-0.03em;
+    margin:0 0 14px; color:var(--ink);
+  }
+  .hero h1 .accent{
+    background:linear-gradient(120deg, var(--blue), var(--grad-b));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .hero-sub{
+    font-size:clamp(1.15rem, 2.6vw, 1.5rem); font-weight:500; color:var(--ink);
+    max-width:640px; margin:0 auto 20px; letter-spacing:-0.005em; line-height:1.3;
+  }
+  .hero-tagline{
+    font-size:18px; color:var(--gray); max-width:540px; margin:0 auto 40px; line-height:1.55;
+  }
+  .cta-row{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:8px;}
+  .pill{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:16px; font-weight:500; padding:11px 24px;
+    border-radius:12px; transition:background .15s, opacity .15s, transform .15s;
+  }
+  .pill.filled{background:var(--ink); color:var(--white);}
+  .pill.filled:hover{background:#000; text-decoration:none; transform:translateY(-1px);}
+  .pill.ghost{color:var(--ink); border:1px solid var(--gray-line);}
+  .pill.ghost:hover{text-decoration:none; border-color:var(--ink);}
 
+  /* ---- stat highlight strip ---- */
+  .stat-strip{
+    padding:0 0 90px; border-top:1px solid var(--gray-line); padding-top:56px;
+  }
+  .stat-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:40px;
+    text-align:center; max-width:900px; margin:0 auto; padding:0 22px;
+  }
+  .stat-num{
+    font-size:clamp(2.2rem,5vw,3.2rem); font-weight:700; letter-spacing:-0.02em;
+    color:var(--ink); display:block;
+  }
+  .stat-cap{font-size:14px; color:var(--gray); margin-top:6px;}
+  @media (max-width:640px){ .stat-grid{grid-template-columns:1fr; gap:36px;} }
 
-An FPGA accelerator for low-precision neural-network inference built around a **4×4 weight-stationary systolic array** and **FP4 E2M1** arithmetic.  
-It combines **lane-wise zero-skipping**, **on-chip BRAM weight storage**, an **activation FIFO**, and a lightweight **AXI-Lite control path** for a compact accelerator-style design.
+  /* ---- sections ---- */
+  section{padding:100px 0;}
+  section.light-gray{background:var(--gray-light);}
+  .section-head{text-align:center; margin-bottom:52px;}
+  .eyebrow-sm{
+    font-size:14px; font-weight:600; color:var(--blue);
+    margin:0 0 12px; letter-spacing:0.01em;
+  }
+  h2{
+    font-size:clamp(2rem, 4.6vw, 2.9rem); font-weight:700; letter-spacing:-0.025em;
+    margin:0 0 18px; line-height:1.1; color:var(--ink);
+  }
+  .section-desc{
+    font-size:18px; color:var(--gray); max-width:580px; margin:0 auto; line-height:1.55;
+  }
+  p{color:var(--gray); font-size:17px;}
 
----
+  /* reveal */
+  .reveal{opacity:0; transform:translateY(24px); transition:opacity .7s cubic-bezier(.2,.8,.2,1), transform .7s cubic-bezier(.2,.8,.2,1);}
+  .reveal.in{opacity:1; transform:translateY(0);}
+  @media (prefers-reduced-motion:reduce){ .reveal{opacity:1; transform:none; transition:none;} }
 
-## What this project explores
+  /* ---- feature list ---- */
+  ul.feature-list{list-style:none; margin:36px 0 0; padding:0; display:grid; gap:0;}
+  ul.feature-list li{
+    display:flex; gap:16px; padding:20px 0;
+    border-top:1px solid var(--gray-line); font-size:17px; color:var(--ink);
+    text-align:left; align-items:flex-start;
+  }
+  ul.feature-list li .dot{
+    width:6px; height:6px; border-radius:50%; background:var(--blue); margin-top:9px; flex-shrink:0;
+  }
+  ul.feature-list li strong{font-weight:600;}
+  ul.feature-list li span.sub{color:var(--gray); display:block; margin-top:2px; font-size:15px;}
 
-FP4-SPARSA is a personal hardware project focused on making neural-network inference more efficient with:
+  /* ---- demo card ---- */
+  .card{
+    background:var(--white); border-radius:20px; padding:40px;
+    border:1px solid var(--gray-line);
+    max-width:680px; margin:0 auto;
+  }
+  .demo-controls{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; margin-bottom:32px;}
+  .toggle-row{display:flex; align-items:center; gap:12px;}
+  .toggle-label{font-size:15px; color:var(--ink); font-weight:500;}
+  .switch{
+    width:51px; height:31px; border-radius:16px; background:#e9e9eb;
+    position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;
+  }
+  .switch::after{
+    content:''; position:absolute; top:2px; left:2px; width:27px; height:27px;
+    border-radius:50%; background:var(--white); transition:transform .2s;
+    box-shadow:0 2px 6px rgba(0,0,0,0.2);
+  }
+  .switch.on{background:var(--blue);}
+  .switch.on::after{transform:translateX(20px);}
+  .demo-readout{text-align:right;}
+  .demo-readout .big{font-size:2rem; font-weight:700; color:var(--ink); display:block; letter-spacing:-0.02em;}
+  .demo-readout .cap{font-size:13px; color:var(--gray);}
+  .pe-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-bottom:18px;}
+  .pe-cell{
+    aspect-ratio:1; border-radius:10px; background:var(--gray-light);
+    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:3px; padding:6px;
+  }
+  .lane{border-radius:3px; background:#d2d2d7; transition:background .3s, opacity .3s;}
+  .lane.active{background:var(--blue);}
+  .lane.skipped{opacity:0.3;}
+  .demo-caption{font-size:13px; color:var(--gray); margin-top:14px; text-align:center;}
 
-- **FP4 E2M1 quantisation***
-- **Per-lane sparsity detection and zero-skipping***
-- **Weight-stationary systolic execution***
-- **On-chip buffering for weights and activations***
-- **A practical FPGA implementation on Xilinx Kintex-7***
+  /* ---- diagram ---- */
+  .diagram{max-width:800px; margin:0 auto; background:var(--gray-light); border-radius:20px; padding:32px;}
+  .diagram svg{width:100%; height:auto; display:block;}
 
-The repository includes both the **Verilog RTL** and a **Python demo** for FP4 quantisation and CIFAR-10 / ResNet-20 experimentation.
+  /* ---- decoder inspector ---- */
+  table.spec-table{width:100%; border-collapse:collapse; margin:24px 0; font-size:15px;}
+  table.spec-table th{
+    text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:0.04em;
+    color:var(--gray); padding:10px 14px; border-bottom:1px solid var(--gray-line); font-weight:500;
+  }
+  table.spec-table td{padding:12px 14px; border-bottom:1px solid var(--gray-line); color:var(--ink);}
+  tr.code-row{cursor:pointer; transition:background .15s;}
+  tr.code-row:hover{background:rgba(0,113,227,0.05);}
+  tr.code-row.selected{background:rgba(0,113,227,0.09);}
+  td.mono, code.mono{font-family:var(--mono); font-size:0.92em;}
 
----
+  .bit-inspector{
+    display:flex; gap:24px; align-items:center; flex-wrap:wrap; justify-content:center;
+    margin-top:28px; padding:28px; border-radius:20px; background:var(--gray-light);
+  }
+  .bit-group{text-align:center;}
+  .bit-group-label{font-size:11px; color:var(--gray); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;}
+  .bit-boxes{display:flex; gap:5px;}
+  .bit-box{
+    width:34px; height:38px; border-radius:8px; background:var(--white);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:15px; color:var(--gray);
+    transition:background .2s, color .2s; box-shadow:0 1px 2px rgba(0,0,0,0.06);
+  }
+  .bit-box.hi{background:var(--blue); color:var(--white); box-shadow:none;}
+  .bit-arrow{color:var(--gray); font-size:20px;}
+  .bit-result{font-size:1.1rem; font-weight:600; color:var(--ink);}
+  .bit-result .sub{color:var(--gray); font-size:13px; display:block; margin-top:3px; font-weight:400; font-family:var(--mono);}
 
-## Architecture
+  /* ---- code block ---- */
+  pre{
+    background:#1c1c1e; color:#f5f5f7; border-radius:16px; padding:24px 26px;
+    font-family:var(--mono); font-size:14px; line-height:1.6; overflow-x:auto;
+    position:relative; max-width:640px; margin:24px auto;
+  }
+  pre .copy-btn{
+    position:absolute; top:14px; right:16px; font-family:var(--sans); font-size:12px;
+    background:rgba(255,255,255,0.1); color:#f5f5f7; border:none; padding:5px 12px;
+    border-radius:980px; cursor:pointer; opacity:0; transition:opacity .15s, background .15s;
+  }
+  pre:hover .copy-btn{opacity:1;}
+  pre .copy-btn:hover{background:rgba(255,255,255,0.18);}
 
-```text
-┌─────────────────────────────────────────────┐
-│           fp4_sparsa_4x4 (Top)              │
-│                                             │
-│  ┌──────────────┐   ┌────────────────────┐  │
-│  │  AXI-Lite    │   │   BRAM Weight      │  │
-│  │  Control     │   │   Buffer           │  │
-│  │  (slave)     │   │   (8×128-bit)      │  │
-│  └──────┬───────┘   └────────┬───────────┘  │
-│         │                    │              │
-│  ┌──────▼────────────────────▼───────────┐  │
-│  │         systolic_array (4×4)          │  │
-│  │                                       │  │
-│  │  FP4 decode (decode_fp4 /             │  │
-│  │  build_dec_word) at array boundary    │  │
-│  │                                       │  │
-│  │  ┌──────────┐   ┌──────────┐          │  │
-│  │  │pe_pipelined│ │pe_pipelined│  ...   │  │
-│  │  │ (5-stage) │ │ (5-stage) │          │  │
-│  │  │           │ │           │          │  │
-│  │  │ pre-decoded│ │pre-decoded│          │  │
-│  │  │ 4-lane MAC│ │ 4-lane MAC│          │  │
-│  │  │ pairwise  │ │ pairwise  │          │  │
-│  │  │ adder tree│ │ adder tree│          │  │
-│  │  │ sparsity  │ │ sparsity  │          │  │
-│  │  │ detector  │ │ detector  │          │  │
-│  │  └──────────┘   └──────────┘          │  │
-│  └───────────────────────────────────────┘  │
-│         ▲                                   │
-│  ┌──────┴───────┐                           │
-│  │  Activation  │                           │
-│  │  Input FIFO  │                           │
-│  │ (depth-64)   │                           │
-│  └──────────────┘                           │
-└─────────────────────────────────────────────┘
-```
+  /* ---- tech specs page-style ---- */
+  .specs-block{max-width:760px; margin:0 auto;}
+  .specs-cat{font-size:22px; font-weight:600; margin:48px 0 18px; letter-spacing:-0.01em;}
+  .specs-cat:first-child{margin-top:0;}
+  .specs-row{display:flex; justify-content:space-between; gap:24px; padding:14px 0; border-top:1px solid var(--gray-line); font-size:15px;}
+  .specs-row .k{color:var(--gray); flex-shrink:0; width:220px;}
+  .specs-row .v{color:var(--ink); text-align:right; font-family:var(--mono); font-size:14px;}
 
-**Key design choices:**
+  /* ---- footer ---- */
+  footer{background:var(--gray-light); padding:48px 0; font-size:12px; color:var(--gray);}
+  footer .footer-top{display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; padding-bottom:24px; border-bottom:1px solid var(--gray-line); margin-bottom:20px;}
+  footer a{color:var(--gray); font-size:12px;}
+  footer a:hover{text-decoration:underline;}
+  .footer-links{display:flex; gap:20px; flex-wrap:wrap;}
 
-- **FP4 E2M1 format** — 16 representable values with flush-to-zero for subnormals
-- **Pre-decode at array boundary** — activations/weights decoded to 8-bit operands in `systolic_array.v` before reaching PEs
-- **4-lane MAC structure** — parallel FP4 multiplies inside each PE
-- **Weight-stationary dataflow** — weights stay local while activations stream through the array
-- **BRAM weight buffer** — on-chip storage (8×128-bit) for repeated reuse across input batches
-- **Activation input FIFO** — depth-64 LUTRAM, synchronous
-- **18-bit accumulator** — includes guard bit and saturating output
-- **Runtime `sparse_en` control** — enable or disable zero-skipping without changing the bitstream
-- **AXI-Lite interface** — simple register-based control path with FIFO status reporting
+  /* progress bar */
+  .progress{position:fixed; top:0; left:0; height:2px; width:0%; background:linear-gradient(90deg,var(--grad-a),var(--grad-b)); z-index:200; transition:width .08s linear;}
 
----
+  @media (max-width:640px){
+    section{padding:72px 0;}
+    .hero{padding-top:110px;}
+    .card{padding:28px; border-radius:20px;}
+    .specs-row{flex-direction:column; gap:4px;}
+    .specs-row .v{text-align:left;}
+    .specs-row .k{width:auto;}
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
 
-## Technical deep-dive
+<header class="hero">
+  <h1><span class="accent">FP4-SPARSA</span></h1>
+  <p class="hero-sub">Floating Point 4 Sparse Precision Accelerator<br>Using a Reconfigurable Systolic Array.</p>
+  <p class="hero-tagline">An FPGA-based AI accelerator for neural-network inference that detects zero-valued operands and suppresses unnecessary switching activity in hardware — a sparsity-aware systolic array running FP4 precision, designed in Verilog RTL.</p>
+  <div class="cta-row">
+    <a class="pill filled" href="https://github.com/vinaynavil/FP4-SPARSA">View Repository</a>
+    <a class="pill ghost" href="#architecture">See how it works</a>
+  </div>
+  <ul class="hero-links">
+    <li><a href="#sparsity">Sparsity</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#decoder">Decoder</a></li>
+    <li><a href="#specs">Specifications</a></li>
+  </ul>
+</header>
 
-### FP4 E2M1 format
+<div class="stat-strip">
+  <div class="stat-grid">
+    <div><span class="stat-num" data-target="350" data-decimals="0" data-suffix="MHz">0</span><span class="stat-cap">Clock frequency</span></div>
+    <div><span class="stat-num" data-target="44.8" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS throughput</span></div>
+    <div><span class="stat-num" data-target="263.5" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS per watt</span></div>
+  </div>
+</div>
 
-- 1 sign bit, 2 exponent bits, 1 mantissa bit → 16 representable codes
-- Subnormal exponent (`exp == 00`) → flushed to zero (FTZ), avoids subnormal handling in hardware
-- Values are scaled ×2 (Q1.1) before entering DSP multipliers for compatibility; descaled ÷4 in software post-accumulation
+<section id="sparsity" class="reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow-sm">Sparsity Engine</p>
+      <h2>It only computes<br>what's not zero.</h2>
+      <p class="section-desc">Every PE holds 4 parallel MAC lanes. Flip <code class="mono">sparse_en</code> below and watch the array gate off any lane whose operand decoded to zero — in silicon, that's a DSP48E1 slice going idle instead of multiplying by nothing.</p>
+    </div>
+    <div class="card">
+      <div class="demo-controls">
+        <div class="toggle-row">
+          <div class="switch" id="sparseSwitch" role="button" tabindex="0" aria-label="Toggle sparse_en"></div>
+          <span class="toggle-label">CTRL.sparse_en</span>
+        </div>
+        <div class="demo-readout">
+          <span class="big" id="skipReadout">0.0%</span>
+          <span class="cap">lanes skipped</span>
+        </div>
+      </div>
+      <div class="pe-grid" id="peGrid"></div>
+      <div class="demo-caption">16 PEs × 4 lanes = 64 lanes, mapped 1:1 to the 64 on-device DSP48E1s.</div>
+    </div>
+    <p style="text-align:center; font-size:14px; color:var(--gray); margin-top:20px; max-width:560px; margin-left:auto; margin-right:auto;">63% is the measured figure on ResNet-20 / CIFAR-10: 25.3% weight sparsity and 50.5% activation sparsity combine, since a MAC lane is skipped whenever <em>either</em> operand is zero.</p>
+  </div>
+</section>
 
-#### FP4 E2M1 decoder table
+<section id="architecture" class="reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow-sm">Architecture</p>
+      <h2>A systolic array,<br>refined.</h2>
+      <p class="section-desc">Weights stay put. Activations stream through. Decode happens once, at the boundary — not sixteen times over.</p>
+    </div>
+    <div class="diagram">
+      <svg xmlns="http://www.w3.org/2000/svg" width="900" height="810" viewBox="0 0 900 810" style="background:white">
+<style>
+  .box{fill:#ffffff; stroke:#d2d2d7; stroke-width:1.2;}
+  .lbl{font-family:'Inter',sans-serif; font-size:12.5px; fill:#1d1d1f; font-weight:600;}
+  .sub{font-family:'Roboto Mono',monospace; font-size:9.5px; fill:#86868b;}
+  .wire{stroke:#0071e3; stroke-width:1.2; fill:none; opacity:0.4;}
+  .arrowhead{fill:#86868b;}
+  .flow-arrow{stroke:#0071e3; stroke-width:1.4; fill:none;}
+  .flow-label{font-family:'Roboto Mono',monospace; font-size:9.5px; fill:#0071e3; font-weight:500;}
+  .pe-node{fill:#f5f9ff; stroke:#d8e8fc; stroke-width:1;}
+  .pe-label{font-family:'Roboto Mono',monospace; font-size:10.5px; fill:#3a5f8a; font-weight:500;}
+  .stage-box{fill:#f5f5f7; stroke:#d2d2d7; stroke-width:1.2;}
+</style>
+<defs>
+  <marker id="arrow" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+    <path d="M0,0 L7,3.5 L0,7 Z" class="arrowhead"/>
+  </marker>
+  <marker id="arrow-blue" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+    <path d="M0,0 L7,3.5 L0,7 Z" fill="#0071e3"/>
+  </marker>
+</defs>
 
-| Code (S E1E0 M) | Sign | Exp | Mant | FP4 value | Decoded operand (Q1.1 ×2) |
-|---|---|---|---|---|---|
-| `0000` | + | `00` | `0` | 0 | 0 |
-| `0001` | + | `00` | `1` | 0.5 (subnormal, **FTZ**) | 0 |
-| `0010` | + | `01` | `0` | 1.0 | 2 |
-| `0011` | + | `01` | `1` | 1.5 | 3 |
-| `0100` | + | `10` | `0` | 2.0 | 4 |
-| `0101` | + | `10` | `1` | 3.0 | 6 |
-| `0110` | + | `11` | `0` | 4.0 | 8 |
-| `0111` | + | `11` | `1` | 6.0 | 12 |
-| `1000` | − | `00` | `0` | −0 | 0 |
-| `1001` | − | `00` | `1` | −0.5 (subnormal, **FTZ**) | 0 |
-| `1010` | − | `01` | `0` | −1.0 | −2 |
-| `1011` | − | `01` | `1` | −1.5 | −3 |
-| `1100` | − | `10` | `0` | −2.0 | −4 |
-| `1101` | − | `10` | `1` | −3.0 | −6 |
-| `1110` | − | `11` | `0` | −4.0 | −8 |
-| `1111` | − | `11` | `1` | −6.0 | −12 |
+<!-- main container -->
+<rect x="8" y="8" width="884" height="554" rx="20" fill="none" stroke="#e5e5e7"/>
+<text x="450" y="34" text-anchor="middle" class="sub">FP4-SPARSA</text>
 
-FTZ rows collapse the subnormal magnitude (0.5) to 0 before the value ever reaches the sparsity detector — this is why decode happens once at the array boundary rather than per-PE.
+<!-- AXI-Lite Control -->
+<rect x="34" y="52" width="280" height="100" rx="14" class="box"/>
+<text x="50" y="80" class="lbl">AXI-Lite Control</text>
+<text x="50" y="98" class="sub">5-bit addr · slave</text>
+<text x="50" y="116" class="sub">CTRL · STATUS · WADDR · WDATA</text>
 
-### Decode path
+<!-- Weight BRAM -->
+<rect x="586" y="52" width="264" height="100" rx="14" class="box"/>
+<text x="602" y="80" class="lbl">Weight BRAM</text>
+<text x="602" y="98" class="sub">8 × 128-bit · 2×BRAM36</text>
+<text x="602" y="116" class="sub">ping-pong reload (bank_switch)</text>
 
-- `decode_fp4` and `build_dec_word` (in `systolic_array.v`) convert raw 4-bit FP4 codes into 8-bit signed operands
-- Decode happens once at the array boundary — activations decoded as they enter from the FIFO, weights decoded as they're loaded from BRAM
-- PEs receive pre-decoded 8-bit operands directly; no per-PE decode logic, reducing duplication across the 16 PEs
-- FTZ applied during decode: subnormal patterns map to 0 before reaching the sparsity detector
+<!-- Systolic Array -->
+<rect x="34" y="176" width="816" height="282" rx="16" class="box"/>
+<text x="50" y="204" class="lbl">Systolic Array (4×4)</text>
+<text x="50" y="220" class="sub">decode_fp4 / build_dec_word — FP4 (4-bit) → 8-bit fixed point (Q1.1), FTZ applied</text>
 
-### PE pipeline (5-stage, `pe_pipelined.v`)
+<text x="50" y="240" class="flow-label">weights stationary</text>
+<path class="flow-arrow" d="M137,244 V258" marker-end="url(#arrow-blue)"/>
 
-| Stage | Operation |
-|---|---|
-| 1 | Operand register (CE-gated capture of pre-decoded act/weight) |
-| 2 | 4-lane parallel multiply (DSP48E1, MREG=1/AREG=1) |
-| 3 | Per-lane zero detection (sparsity), lane gating |
-| 4 | Pairwise adder tree partial-product reduction |
-| 5 | 18-bit accumulate with saturation, `valid_out` shift register (depth 5) |
+<path class="flow-arrow" d="M700,252 H786" marker-end="url(#arrow-blue)"/>
+<text x="786" y="248" text-anchor="end" class="flow-label">activations</text>
 
-- 4 parallel FP4 MAC lanes per PE → 64 DSP48E1 total across 4×4 array
-- 18-bit accumulator includes 1 guard bit; saturation flags (`sat_flags[3:0]`) exposed per PE
-- `sparse_en` gates the zero-detection logic at stage 3 — when disabled, all lanes execute unconditionally
+<rect x="50" y="262" width="175" height="30" rx="6" class="pe-node"/>
+<text x="137.5" y="281.0" text-anchor="middle" class="pe-label">PE[0 0]</text>
+<rect x="243" y="262" width="175" height="30" rx="6" class="pe-node"/>
+<text x="330.5" y="281.0" text-anchor="middle" class="pe-label">PE[0 1]</text>
+<rect x="436" y="262" width="175" height="30" rx="6" class="pe-node"/>
+<text x="523.5" y="281.0" text-anchor="middle" class="pe-label">PE[0 2]</text>
+<rect x="629" y="262" width="175" height="30" rx="6" class="pe-node"/>
+<text x="716.5" y="281.0" text-anchor="middle" class="pe-label">PE[0 3]</text>
+<rect x="50" y="312" width="175" height="30" rx="6" class="pe-node"/>
+<text x="137.5" y="331.0" text-anchor="middle" class="pe-label">PE[1 0]</text>
+<rect x="243" y="312" width="175" height="30" rx="6" class="pe-node"/>
+<text x="330.5" y="331.0" text-anchor="middle" class="pe-label">PE[1 1]</text>
+<rect x="436" y="312" width="175" height="30" rx="6" class="pe-node"/>
+<text x="523.5" y="331.0" text-anchor="middle" class="pe-label">PE[1 2]</text>
+<rect x="629" y="312" width="175" height="30" rx="6" class="pe-node"/>
+<text x="716.5" y="331.0" text-anchor="middle" class="pe-label">PE[1 3]</text>
+<rect x="50" y="362" width="175" height="30" rx="6" class="pe-node"/>
+<text x="137.5" y="381.0" text-anchor="middle" class="pe-label">PE[2 0]</text>
+<rect x="243" y="362" width="175" height="30" rx="6" class="pe-node"/>
+<text x="330.5" y="381.0" text-anchor="middle" class="pe-label">PE[2 1]</text>
+<rect x="436" y="362" width="175" height="30" rx="6" class="pe-node"/>
+<text x="523.5" y="381.0" text-anchor="middle" class="pe-label">PE[2 2]</text>
+<rect x="629" y="362" width="175" height="30" rx="6" class="pe-node"/>
+<text x="716.5" y="381.0" text-anchor="middle" class="pe-label">PE[2 3]</text>
+<rect x="50" y="412" width="175" height="30" rx="6" class="pe-node"/>
+<text x="137.5" y="431.0" text-anchor="middle" class="pe-label">PE[3 0]</text>
+<rect x="243" y="412" width="175" height="30" rx="6" class="pe-node"/>
+<text x="330.5" y="431.0" text-anchor="middle" class="pe-label">PE[3 1]</text>
+<rect x="436" y="412" width="175" height="30" rx="6" class="pe-node"/>
+<text x="523.5" y="431.0" text-anchor="middle" class="pe-label">PE[3 2]</text>
+<rect x="629" y="412" width="175" height="30" rx="6" class="pe-node"/>
+<text x="716.5" y="431.0" text-anchor="middle" class="pe-label">PE[3 3]</text>
 
-### Sparsity detection
+<!-- PE-to-PE systolic connectors -->
+<path class="wire" d="M227,277.0 H241" marker-end="url(#arrow)"/>
+<path class="wire" d="M420,277.0 H434" marker-end="url(#arrow)"/>
+<path class="wire" d="M613,277.0 H627" marker-end="url(#arrow)"/>
+<path class="wire" d="M227,327.0 H241" marker-end="url(#arrow)"/>
+<path class="wire" d="M420,327.0 H434" marker-end="url(#arrow)"/>
+<path class="wire" d="M613,327.0 H627" marker-end="url(#arrow)"/>
+<path class="wire" d="M227,377.0 H241" marker-end="url(#arrow)"/>
+<path class="wire" d="M420,377.0 H434" marker-end="url(#arrow)"/>
+<path class="wire" d="M613,377.0 H627" marker-end="url(#arrow)"/>
+<path class="wire" d="M227,427.0 H241" marker-end="url(#arrow)"/>
+<path class="wire" d="M420,427.0 H434" marker-end="url(#arrow)"/>
+<path class="wire" d="M613,427.0 H627" marker-end="url(#arrow)"/>
+<path class="wire" d="M137.5,294 V310" marker-end="url(#arrow)"/>
+<path class="wire" d="M137.5,344 V360" marker-end="url(#arrow)"/>
+<path class="wire" d="M137.5,394 V410" marker-end="url(#arrow)"/>
+<path class="wire" d="M330.5,294 V310" marker-end="url(#arrow)"/>
+<path class="wire" d="M330.5,344 V360" marker-end="url(#arrow)"/>
+<path class="wire" d="M330.5,394 V410" marker-end="url(#arrow)"/>
+<path class="wire" d="M523.5,294 V310" marker-end="url(#arrow)"/>
+<path class="wire" d="M523.5,344 V360" marker-end="url(#arrow)"/>
+<path class="wire" d="M523.5,394 V410" marker-end="url(#arrow)"/>
+<path class="wire" d="M716.5,294 V310" marker-end="url(#arrow)"/>
+<path class="wire" d="M716.5,344 V360" marker-end="url(#arrow)"/>
+<path class="wire" d="M716.5,394 V410" marker-end="url(#arrow)"/>
 
-- Operates on decoded 8-bit operands (post-FTZ), not raw FP4 codes
-- Per-lane: if either activation or weight operand == 0, that lane's MAC is gated off (clock-enable gating, not just result discard)
-- `lane_skip_count` / `zero_skip_count[6:0]` track skip statistics per PE
-- 2-stage pipelined adder tree compensates for variable lane counts entering the pairwise adder tree, avoiding a WNS hit from combinational skip logic
+<!-- Activation FIFO -->
+<rect x="34" y="482" width="816" height="64" rx="12" class="box"/>
+<text x="50" y="506" class="lbl" font-size="11">Activation FIFO</text>
+<text x="50" y="524" class="sub">depth-64 · synchronous LUTRAM</text>
+<text x="560" y="506" class="sub">fifo_empty → STATUS[24]</text>
+<text x="560" y="524" class="sub">fifo_full  → STATUS[25]</text>
 
-### Weight buffer (`weight_bram.v`)
+<!-- wires -->
+<path class="wire" d="M174,152 V176" marker-end="url(#arrow)"/>
+<path class="wire" d="M718,152 V176" marker-end="url(#arrow)"/>
+<path class="wire" d="M442,482 V458" marker-end="url(#arrow)"/>
 
-- 8×128-bit BRAM (2× BRAM36), holds full 4×4 weight set (16 × 8-bit pre-decoded weights packed per row)
-- Load sequence: write `WADDR`, then 3× `WDATA_LO` (32-bit chunks), then `WDATA_HI` (final 32-bit chunk) — `WDATA_HI` write triggers the commit and auto-increments `WADDR`
-- 2-cycle BRAM read latency accounted for in the weight-load latency chain feeding the array
-- Ping-pong banking (`bank_switch`) allows next weight set to load while current set is in use
+<!-- PE pipeline detail panel -->
+<rect x="8" y="578" width="884" height="216" rx="20" fill="none" stroke="#e5e5e7" stroke-dasharray="4,4"/>
+<text x="30" y="604" class="sub">PROCESSING ELEMENT ARCHITECTURE — ONE LANE, EXPANDED (5 STAGES)</text>
 
-### Activation FIFO (`act_fifo.v`)
+<rect x="34" y="620" width="150" height="140" rx="12" class="stage-box"/>
+<text x="50" y="640" class="lbl" font-size="11">1 · Operand Reg</text>
+<text x="50" y="658" class="sub">CE-gated capture of</text>
+<text x="50" y="672" class="sub">pre-decoded act/weight</text>
+<text x="50" y="690" class="sub">8-bit (Q1.1)</text>
 
-- Depth-64, synchronous LUTRAM-based FIFO
-- Feeds activations row-by-row into the array's left edge
-- `fifo_empty` / `fifo_full` flags surfaced directly in AXI `STATUS` register (bits 24/25)
-- Drain timing accounts for `acc_s3` hold behavior to avoid bubble cycles at the array boundary
+<rect x="204" y="620" width="150" height="140" rx="12" class="stage-box"/>
+<text x="220" y="640" class="lbl" font-size="11">2 · Multiply</text>
+<text x="220" y="658" class="sub">unconditional —</text>
+<text x="220" y="672" class="sub">4-lane DSP48E1</text>
+<text x="220" y="690" class="sub">MREG/AREG=1</text>
 
-### AXI-Lite control path (`axi_lite_ctrl.v`, v2)
+<rect x="374" y="620" width="150" height="140" rx="12" class="stage-box"/>
+<text x="390" y="640" class="lbl" font-size="11">3 · Zero Detect</text>
+<text x="390" y="658" class="sub">+ CE gate on result</text>
+<text x="390" y="672" class="sub">suppresses stages 4–5</text>
+<text x="390" y="690" class="sub">controlled by sparse_en</text>
 
-- 5-bit address space, single-cycle register read/write (no wait states)
-- `CTRL` (0x00): bit 0 = start, bit 1 = `sparse_en`
-- `STATUS` (0x04): bit 0 = done, bit 24 = `fifo_empty`, bit 25 = `fifo_full`
-- Weight-load registers (`WADDR`/`WDATA_LO`/`WDATA_HI`) operate independently of the start/done handshake — weights can be loaded while the array is idle
-- No interrupt support; status is polled
+<rect x="544" y="620" width="150" height="140" rx="12" class="stage-box"/>
+<text x="560" y="640" class="lbl" font-size="11">4 · Adder Tree</text>
+<text x="560" y="658" class="sub">pairwise reduction,</text>
+<text x="560" y="672" class="sub">2-stage pipelined</text>
 
-### Timing closure notes
+<rect x="714" y="620" width="150" height="140" rx="12" class="stage-box"/>
+<text x="730" y="640" class="lbl" font-size="11">5 · Accumulate</text>
+<text x="730" y="658" class="sub">18-bit, saturating</text>
+<text x="730" y="672" class="sub">(1 guard bit)</text>
+<text x="730" y="690" class="sub">valid_out shift ×5</text>
 
-- `phys_opt_design=ExploreWithRemap` applied permanently — required to close timing at 350MHz with the 5-stage PE pipeline
-- MREG=1, AREG=1 on all 64 DSP48E1 instances — needed after the DP4A (4-lane) upgrade increased fan-in to the multiply stage
-- BRAM-to-array output timing required an added staging register in `systolic_array.v` to break a critical path through the decode logic
-- Final WNS +0.079ns at 350MHz, 17/17 testbench cases passing
+<path class="wire" d="M184,689 H204" marker-end="url(#arrow)"/>
+<path class="wire" d="M354,689 H374" marker-end="url(#arrow)"/>
+<path class="wire" d="M524,689 H544" marker-end="url(#arrow)"/>
+<path class="wire" d="M694,689 H714" marker-end="url(#arrow)"/>
+</svg>
+    </div>
+    <ul class="feature-list">
+      <li><span class="dot"></span><span><strong>Pre-decode at the boundary</strong><span class="sub">Activations and weights convert to 8-bit operands in systolic_array.v before reaching any PE.</span></span></li>
+      <li><span class="dot"></span><span><strong>4-lane MAC per PE</strong><span class="sub">64 DSP48E1 total across the array — MREG and AREG both pinned.</span></span></li>
+      <li><span class="dot"></span><span><strong>18-bit saturating accumulator</strong><span class="sub">One guard bit, no silent overflow.</span></span></li>
+    </ul>
+  </div>
+</section>
 
----
+<section id="decoder" class="reveal">
+  <div class="wrap-narrow">
+    <div class="section-head">
+      <p class="eyebrow-sm">FP4 E2M1</p>
+      <h2>Sixteen values.<br>Zero waste.</h2>
+      <p class="section-desc">1 sign bit, 2 exponent bits, 1 mantissa bit. Subnormals flush to zero before they ever reach the sparsity detector. Click a code to see it decoded.</p>
+    </div>
+    <table class="spec-table" id="decoderTable">
+      <thead><tr><th>Code</th><th>Sign</th><th>FP4 value</th><th>Decoded</th></tr></thead>
+      <tbody>
+        <tr class="code-row" data-bits="0000" data-val="0" data-fp="0"><td class="mono">0000</td><td>+</td><td>0</td><td class="mono">0</td></tr>
+        <tr class="code-row" data-bits="0001" data-val="0" data-fp="0.5 (FTZ)"><td class="mono">0001</td><td>+</td><td>0.5 (FTZ)</td><td class="mono">0</td></tr>
+        <tr class="code-row" data-bits="0010" data-val="2" data-fp="1.0"><td class="mono">0010</td><td>+</td><td>1.0</td><td class="mono">2</td></tr>
+        <tr class="code-row" data-bits="0011" data-val="3" data-fp="1.5"><td class="mono">0011</td><td>+</td><td>1.5</td><td class="mono">3</td></tr>
+        <tr class="code-row" data-bits="0100" data-val="4" data-fp="2.0"><td class="mono">0100</td><td>+</td><td>2.0</td><td class="mono">4</td></tr>
+        <tr class="code-row" data-bits="0101" data-val="6" data-fp="3.0"><td class="mono">0101</td><td>+</td><td>3.0</td><td class="mono">6</td></tr>
+        <tr class="code-row" data-bits="0110" data-val="8" data-fp="4.0"><td class="mono">0110</td><td>+</td><td>4.0</td><td class="mono">8</td></tr>
+        <tr class="code-row selected" data-bits="0111" data-val="12" data-fp="6.0"><td class="mono">0111</td><td>+</td><td>6.0</td><td class="mono">12</td></tr>
+        <tr class="code-row" data-bits="1000" data-val="0" data-fp="-0"><td class="mono">1000</td><td>−</td><td>-0</td><td class="mono">0</td></tr>
+        <tr class="code-row" data-bits="1001" data-val="0" data-fp="-0.5 (FTZ)"><td class="mono">1001</td><td>−</td><td>-0.5 (FTZ)</td><td class="mono">0</td></tr>
+        <tr class="code-row" data-bits="1010" data-val="-2" data-fp="-1.0"><td class="mono">1010</td><td>−</td><td>-1.0</td><td class="mono">-2</td></tr>
+        <tr class="code-row" data-bits="1011" data-val="-3" data-fp="-1.5"><td class="mono">1011</td><td>−</td><td>-1.5</td><td class="mono">-3</td></tr>
+        <tr class="code-row" data-bits="1100" data-val="-4" data-fp="-2.0"><td class="mono">1100</td><td>−</td><td>-2.0</td><td class="mono">-4</td></tr>
+        <tr class="code-row" data-bits="1101" data-val="-6" data-fp="-3.0"><td class="mono">1101</td><td>−</td><td>-3.0</td><td class="mono">-6</td></tr>
+        <tr class="code-row" data-bits="1110" data-val="-8" data-fp="-4.0"><td class="mono">1110</td><td>−</td><td>-4.0</td><td class="mono">-8</td></tr>
+        <tr class="code-row" data-bits="1111" data-val="-12" data-fp="-6.0"><td class="mono">1111</td><td>−</td><td>-6.0</td><td class="mono">-12</td></tr>
+      </tbody>
+    </table>
+    <div class="bit-inspector" id="bitInspector">
+      <div class="bit-group">
+        <div class="bit-group-label">Sign</div>
+        <div class="bit-boxes" id="bitSign"></div>
+      </div>
+      <span class="bit-arrow">·</span>
+      <div class="bit-group">
+        <div class="bit-group-label">Exponent</div>
+        <div class="bit-boxes" id="bitExp"></div>
+      </div>
+      <span class="bit-arrow">·</span>
+      <div class="bit-group">
+        <div class="bit-group-label">Mantissa</div>
+        <div class="bit-boxes" id="bitMant"></div>
+      </div>
+      <span class="bit-arrow">→</span>
+      <div class="bit-result" id="bitResult">6.0<span class="sub">decoded → 12 (Q1.1 ×2)</span></div>
+    </div>
+  </div>
+</section>
 
-## FPGA implementation
-
-| Metric | Value |
-|---|---|
-| **Target Device** | Xilinx Kintex-7 (xc7k160tfbg676-2) |
-| **Clock Frequency** | 350 MHz |
-| **WNS** | +0.079 ns |
-| **DSP48E1 Usage** | 64 (10.67%) |
-| **LUT Usage** | 1,926 (1.89%) |
-| **Flip-Flop Usage** | 2,899 (1.42%) |
-| **BRAM Usage** | 2 (BRAM36) |
-| **Dynamic Power** | 0.058 W |
-| **Total Power** | 0.170 W |
-| **Throughput** | 44.8 GOPS |
-| **Efficiency** | 263.5 GOPS/W (total power basis) |
-| **Testbench** | 17/17 self-checking test cases pass |
-
-**Toolflow:** Vivado 2024.2 | `phys_opt_design=ExploreWithRemap` | MREG=1, AREG=1 on all DSP48E1
-
-> **Note:** A v20 optimization (act_dec_out forwarding + CE-gated operand registers) was implemented and functionally verified, but worsened both WNS and power versus v19 and was reverted. v19 remains the confirmed final hardware baseline.
-
----
-
-## Hardware blocks added over time
-
-### BRAM weight buffer
-Weights are stored on-chip in 8×128-bit block RAM instead of being streamed directly into the array.
-
-- CPU loads weights via `WADDR` → 3× `WDATA_LO` writes → `WDATA_HI` commit (auto-increments `WADDR`)
-- Reduces external weight traffic
-- Makes the accelerator behave more like a real inference engine
-- Supports repeated reuse across activations
-
-### Activation FIFO
-A dedicated depth-64 synchronous FIFO feeds activations row-by-row into the systolic array.
-
-- Decouples input timing from internal pipeline timing
-- Status visible via AXI `STATUS` register (empty/full flags)
-- Fits naturally with the array dataflow
-
-### AXI-Lite control interface
-A minimal 5-bit-address register interface provides software control.
-
-| Register | Offset | Description |
-|---|---|---|
-| `CTRL` | `0x00` | Start bit, `sparse_en` |
-| `STATUS` | `0x04` | Done flag, `fifo_empty` (bit 24), `fifo_full` (bit 25) |
-| `WADDR` | `0x08` | Weight BRAM write address |
-| `WDATA_LO` | `0x0C` | Weight data [31:0] |
-| `WDATA_HI` | `0x10` | Weight data [63:32] — commits write, auto-increments `WADDR` |
-
----
-
-## Sparsity-aware zero-skipping
-
-The main idea in FP4-SPARSA is **per-lane zero detection**:
-
-- each PE contains 4 parallel FP4 MAC lanes
-- activations and weights are pre-decoded to 8-bit operands at the array boundary (FP4 → FTZ applied)
-- if a decoded operand lane is zero, that MAC lane is skipped
-- the `sparse_en` signal lets you turn the feature on or off at runtime
-
-### Measured sparsity effects on ResNet-20 / CIFAR-10
-
-| Metric | Value |
-|---|---|
-| Weight sparsity (FP4 + FTZ) | 25.3% |
-| Activation sparsity (ReLU + FP4) | 50.5% |
-| **MACs skipped** | **63.0%** |
-| **Power saving** | **25.2%** |
-
----
-
-## Python demo
-
-The Python side is used to explore FP4 quantisation behaviour and compare it with full precision.
-
-### Results
-
-| Mode | Accuracy | Notes |
-|---|---|---|
-| FP32 baseline | **93.17%** | Full precision |
-| FP4 quantised | **91.11%** | E2M1 format, FTZ enabled |
-| Accuracy drop | **2.06%** | Small degradation |
-
-### Run the demo
-
-```bash
-cd python_demo
+<section class="light-gray reveal">
+  <div class="wrap-narrow">
+    <div class="section-head">
+      <p class="eyebrow-sm">Python Demo</p>
+      <h2>91.11% accuracy.<br>2 points given up.</h2>
+      <p class="section-desc">ResNet-20 on CIFAR-10, quantised to FP4 E2M1 with flush-to-zero. A small accuracy trade for a much smaller compute footprint.</p>
+    </div>
+    <table class="spec-table">
+      <thead><tr><th>Mode</th><th>Accuracy</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>FP32 baseline</td><td class="mono">93.17%</td><td>Full precision</td></tr>
+        <tr><td>FP4 quantised</td><td class="mono">91.11%</td><td>E2M1, FTZ enabled</td></tr>
+        <tr><td>Accuracy drop</td><td class="mono">2.06%</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <pre><code>cd python_demo
 
 # Train ResNet-20 on CIFAR-10
 python train.py
 
 # Launch the live demo UI
-python ui.py
-```
+python ui.py</code></pre>
+  </div>
+</section>
 
-The Tkinter UI shows:
+<section id="verification" class="light-gray reveal">
+  <div class="wrap-narrow">
+    <div class="section-head">
+      <p class="eyebrow-sm">Verification</p>
+      <h2>Checked, not just<br>synthesized.</h2>
+      <p class="section-desc">A design that closes timing isn't the same as one that's verified. Both matter to the people who'll review this.</p>
+    </div>
+    <ul class="feature-list">
+      <li><span class="dot"></span><span><strong>Self-checking Verilog testbench</strong><span class="sub">Assertions compare expected vs. actual results automatically — no manual waveform inspection required.</span></span></li>
+      <li><span class="dot"></span><span><strong>FP4 E2M1 decoder verification</strong><span class="sub">All 16 codes checked against their expected decoded values, including FTZ behavior on subnormals.</span></span></li>
+      <li><span class="dot"></span><span><strong>Sparse vs. dense mode comparison</strong><span class="sub">sparse_en toggled across test vectors to confirm functional equivalence with zero-skipping on and off.</span></span></li>
+      <li><span class="dot"></span><span><strong>17 / 17 regression tests passed</strong><span class="sub">Full suite, including AXI-Lite register access and weight BRAM read/write.</span></span></li>
+      <li><span class="dot"></span><span><strong>Timing closure achieved</strong><span class="sub">WNS +0.079 ns at 350MHz on the target Kintex-7 part — post-implementation, not just post-synthesis.</span></span></li>
+    </ul>
+  </div>
+</section>
 
-- live CIFAR-10 samples
-- FP32 vs FP4 predictions
-- sparsity and skip-rate statistics
+<section id="specs" class="reveal">
+  <div class="wrap-narrow">
+    <div class="section-head">
+      <p class="eyebrow-sm">Specifications</p>
+      <h2>The numbers.</h2>
+    </div>
+    <div class="specs-block">
+      <div class="specs-cat">Implementation</div>
+      <div class="specs-row"><span class="k">Target device</span><span class="v">Kintex-7 xc7k160tfbg676-2</span></div>
+      <div class="specs-row"><span class="k">Clock frequency</span><span class="v">350 MHz</span></div>
+      <div class="specs-row"><span class="k">WNS</span><span class="v">+0.079 ns</span></div>
+      <div class="specs-row"><span class="k">LUTs</span><span class="v">1,926 (1.89%)</span></div>
+      <div class="specs-row"><span class="k">Flip-flops</span><span class="v">2,899 (1.42%)</span></div>
+      <div class="specs-row"><span class="k">BRAM</span><span class="v">2 × BRAM36</span></div>
+      <div class="specs-row"><span class="k">DSP48E1</span><span class="v">64 (10.67%)</span></div>
 
-### Requirements
+      <div class="specs-cat">Power &amp; performance</div>
+      <div class="specs-row"><span class="k">Dynamic power</span><span class="v">0.058 W</span></div>
+      <div class="specs-row"><span class="k">Total power</span><span class="v">0.170 W</span></div>
+      <div class="specs-row"><span class="k">Throughput</span><span class="v">44.8 GOPS</span></div>
+      <div class="specs-row"><span class="k">Energy efficiency</span><span class="v">263.5 GOPS/W (total on-chip power)</span></div>
+      <div class="specs-row"><span class="k">Testbench</span><span class="v">17 / 17 pass</span></div>
 
-```text
-torch (cu121)
-torchvision
-numpy
-tkinter (built-in)
-```
+      <div class="specs-cat">Sparsity, measured on ResNet-20</div>
+      <div class="specs-row"><span class="k">Weight sparsity</span><span class="v">25.3%</span></div>
+      <div class="specs-row"><span class="k">Activation sparsity</span><span class="v">50.5%</span></div>
+      <div class="specs-row"><span class="k">MACs skipped</span><span class="v">63.0%</span></div>
+      <div class="specs-row"><span class="k">Power saving</span><span class="v">25.2%</span></div>
 
----
+      <div class="specs-cat">AXI-Lite register map</div>
+      <div class="specs-row"><span class="k">CTRL</span><span class="v">0x00 — start, sparse_en</span></div>
+      <div class="specs-row"><span class="k">STATUS</span><span class="v">0x04 — done, fifo_empty(24), fifo_full(25)</span></div>
+      <div class="specs-row"><span class="k">WADDR</span><span class="v">0x08</span></div>
+      <div class="specs-row"><span class="k">WDATA_LO</span><span class="v">0x0C — 3× sequential writes</span></div>
+      <div class="specs-row"><span class="k">WDATA_HI</span><span class="v">0x10 — commits, auto-increments WADDR</span></div>
+    </div>
+  </div>
+</section>
 
-## Repository structure
+<footer>
+  <div class="wrap">
+    <div class="footer-top">
+      <div><strong style="color:var(--ink); font-size:13px;">Vinay Navil C N</strong><br>FPGA / digital hardware / AI accelerator projects</div>
+      <div class="footer-links">
+        <a href="https://www.linkedin.com/in/vinaynavil/">LinkedIn</a>
+        <a href="https://github.com/vinaynavil">GitHub</a>
+        <a href="/FP4-SPARSA/LICENSE">MIT License</a>
+      </div>
+    </div>
+    <div>Copyright © 2026 Vinay Navil. Built with Verilog RTL, Vivado, and FPGA optimization.</div>
+  </div>
+</footer>
 
-```text
-FP4-SPARSA/
-├── rtl/
-│   ├── fp4_sparsa_4x4.v
-│   ├── systolic_array.v      # includes decode_fp4 / build_dec_word
-│   ├── pe_pipelined.v
-│   ├── axi_lite_ctrl.v
-│   ├── weight_bram.v
-│   └── act_fifo.v
-├── tb/
-│   ├── tb_fp4_sparsa_4x4.v
-│   ├── tb_axi_lite_ctrl.v
-│   └── tb_weight_bram.v
-├── constraints/
-│   └── fp4_sparsa.xdc
-├── python_demo/
-│   ├── train.py
-│   ├── quantize.py
-│   ├── cifar10_loader.py
-│   ├── ui.py
-│   └── models/
-│       ├── resnet20.py
-│       └── fp4_inference.py
-├── LICENSE
-└── README.md
-```
+<script>
+(function(){
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
----
+  /* progress bar */
+  var progress = document.getElementById('progress');
+  function updateProgress(){
+    var h = document.documentElement;
+    progress.style.width = (h.scrollTop/(h.scrollHeight-h.clientHeight)*100) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, {passive:true});
+  updateProgress();
 
-## What makes it interesting
+  /* reveal */
+  var revealEls = document.querySelectorAll('.reveal');
+  if('IntersectionObserver' in window && !reduceMotion){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, {threshold:0.1});
+    revealEls.forEach(function(el){ io.observe(el); });
+  } else {
+    revealEls.forEach(function(el){ el.classList.add('in'); });
+  }
 
-This project explores the combination of:
+  /* count-up stats */
+  var stats = document.querySelectorAll('.stat-num');
+  function animateStat(el){
+    var target = parseFloat(el.getAttribute('data-target'));
+    var decimals = parseInt(el.getAttribute('data-decimals')||'0',10);
+    var suffix = el.getAttribute('data-suffix')||'';
+    if(reduceMotion){ el.textContent = target.toFixed(decimals)+suffix; return; }
+    var duration=1200, start=null;
+    function step(ts){
+      if(!start) start=ts;
+      var p = Math.min((ts-start)/duration,1);
+      var eased = 1-Math.pow(1-p,3);
+      el.textContent = (target*eased).toFixed(decimals)+suffix;
+      if(p<1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var statStrip = document.querySelector('.stat-strip');
+  if(statStrip){
+    var sio = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if(e.isIntersecting){ stats.forEach(animateStat); sio.disconnect(); } });
+    }, {threshold:0.4});
+    sio.observe(statStrip);
+  }
 
-- **low-precision FP4 arithmetic**
-- **systolic-array execution**
-- **lane-wise zero-skipping**
-- **on-chip buffering**
-- **FPGA-friendly streaming control**
+  /* copy buttons */
+  document.querySelectorAll('pre').forEach(function(pre){
+    var btn = document.createElement('button');
+    btn.className='copy-btn'; btn.textContent='Copy';
+    btn.addEventListener('click', function(){
+      navigator.clipboard.writeText(pre.querySelector('code').textContent).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1400);
+      });
+    });
+    pre.appendChild(btn);
+  });
 
-That mix makes it a useful personal project for experimenting with compact accelerator design.
+  /* sparsity demo */
+  var peGrid = document.getElementById('peGrid');
+  var sparseSwitch = document.getElementById('sparseSwitch');
+  var skipReadout = document.getElementById('skipReadout');
+  var TOTAL_LANES = 64;
+  var SKIP_RATE = 0.63; // measured on ResNet-20 / CIFAR-10 — fixed, not random per toggle
+  for(var i=0;i<16;i++){
+    var cell=document.createElement('div'); cell.className='pe-cell';
+    for(var l=0;l<4;l++){
+      var lane=document.createElement('div');
+      lane.className='lane active';
+      cell.appendChild(lane);
+    }
+    peGrid.appendChild(cell);
+  }
+  var laneEls = peGrid.querySelectorAll('.lane');
+  var sparseOn=false;
 
----
+  function shuffledSkipMask(){
+    // exactly round(TOTAL_LANES * SKIP_RATE) lanes marked skipped, position reshuffled each call
+    var count = Math.round(TOTAL_LANES * SKIP_RATE);
+    var idxs = Array.from({length:TOTAL_LANES}, function(_,k){return k;});
+    for(var a=idxs.length-1; a>0; a--){
+      var b = Math.floor(Math.random()*(a+1));
+      var tmp=idxs[a]; idxs[a]=idxs[b]; idxs[b]=tmp;
+    }
+    var mask = new Array(TOTAL_LANES).fill(false);
+    idxs.slice(0,count).forEach(function(k){ mask[k]=true; });
+    return mask;
+  }
 
-## Author
+  function renderLanes(){
+    if(sparseOn){
+      var mask = shuffledSkipMask();
+      laneEls.forEach(function(el,idx){
+        el.classList.remove('active','skipped');
+        el.classList.add(mask[idx] ? 'skipped' : 'active');
+      });
+      skipReadout.textContent = (SKIP_RATE*100).toFixed(1)+'%';
+    } else {
+      laneEls.forEach(function(el){ el.classList.remove('skipped'); el.classList.add('active'); });
+      skipReadout.textContent = '0.0%';
+    }
+  }
+  function toggleSparse(){ sparseOn=!sparseOn; sparseSwitch.classList.toggle('on',sparseOn); renderLanes(); }
+  sparseSwitch.addEventListener('click', toggleSparse);
+  sparseSwitch.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){e.preventDefault(); toggleSparse();} });
+  renderLanes();
 
-**Vinay Navil C N**  
-FPGA / digital hardware / AI accelerator projects
-
-[LinkedIn](https://www.linkedin.com/in/vinaynavil/)  
-[GitHub](https://github.com/vinaynavil)
-
----
-
-## License
-
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+  /* decoder bit inspector */
+  var bitSign=document.getElementById('bitSign'), bitExp=document.getElementById('bitExp'),
+      bitMant=document.getElementById('bitMant'), bitResult=document.getElementById('bitResult');
+  var codeRows = document.querySelectorAll('#decoderTable .code-row');
+  function box(bit){ var d=document.createElement('div'); d.className='bit-box'+(bit==='1'?' hi':''); d.textContent=bit; return d; }
+  function renderBits(bits,val,fp){
+    bitSign.innerHTML=''; bitExp.innerHTML=''; bitMant.innerHTML='';
+    bitSign.appendChild(box(bits[0]));
+    bitExp.appendChild(box(bits[1])); bitExp.appendChild(box(bits[2]));
+    bitMant.appendChild(box(bits[3]));
+    bitResult.innerHTML = fp+'<span class="sub">decoded → '+val+' (Q1.1 ×2)</span>';
+  }
+  codeRows.forEach(function(row){
+    row.addEventListener('click', function(){
+      codeRows.forEach(function(r){r.classList.remove('selected');});
+      row.classList.add('selected');
+      renderBits(row.getAttribute('data-bits'), row.getAttribute('data-val'), row.getAttribute('data-fp'));
+    });
+  });
+  var initial = document.querySelector('#decoderTable .code-row.selected');
+  if(initial) renderBits(initial.getAttribute('data-bits'), initial.getAttribute('data-val'), initial.getAttribute('data-fp'));
+})();
+</script>
+</body>
+</html>
