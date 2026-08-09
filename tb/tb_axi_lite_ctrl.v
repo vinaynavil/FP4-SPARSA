@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 // ============================================================
-// Testbench : tb_axi_lite_ctrl  (v19)
+// Testbench : tb_axi_lite_ctrl  (v20 Final)
 // Tests AXI-Lite register write/read-back for axi_lite_ctrl v2
 // (BRAM weight-buffer variant).
 //
@@ -41,9 +41,6 @@ module tb_axi_lite_ctrl;
 
     // Dummy status inputs
     reg        valid_out        = 1;
-    reg [6:0]  zero_skip_count  = 7'd42;
-    reg [5:0]  sparse_act_count = 6'd15;
-    reg [5:0]  sparse_wgt_count = 6'd7;
     reg [3:0]  sat_flags        = 4'b1010;
     reg        fifo_full        = 1'b0;
     reg        fifo_empty       = 1'b1;
@@ -91,9 +88,6 @@ module tb_axi_lite_ctrl;
         .s_axi_rvalid     (rvalid),
         .s_axi_rready     (rready),
         .valid_out        (valid_out),
-        .zero_skip_count  (zero_skip_count),
-        .sparse_act_count (sparse_act_count),
-        .sparse_wgt_count (sparse_wgt_count),
         .sat_flags        (sat_flags),
         .fifo_full        (fifo_full),
         .fifo_empty       (fifo_empty),
@@ -208,9 +202,7 @@ module tb_axi_lite_ctrl;
         axi_read(5'h04, rd);
         $display("  STATUS = 0x%08X", rd);
         if (rd[0]     !== 1'b1)    begin $display("  FAIL: valid_out");        errors=errors+1; end
-        if (rd[7:1]   !== 7'd42)   begin $display("  FAIL: zero_skip=%0d",  rd[7:1]);   errors=errors+1; end
-        if (rd[13:8]  !== 6'd15)   begin $display("  FAIL: sparse_act=%0d", rd[13:8]);  errors=errors+1; end
-        if (rd[19:14] !== 6'd7)    begin $display("  FAIL: sparse_wgt=%0d", rd[19:14]); errors=errors+1; end
+        if (rd[19:1]  !== 19'd0)   begin $display("  FAIL: reserved status bits [19:1] not zero"); errors=errors+1; end
         if (rd[23:20] !== 4'b1010) begin $display("  FAIL: sat_flags=%b",   rd[23:20]); errors=errors+1; end
         if (rd[24]    !== 1'b1)    begin $display("  FAIL: fifo_empty bit");            errors=errors+1; end
         if (rd[25]    !== 1'b0)    begin $display("  FAIL: fifo_full bit");             errors=errors+1; end

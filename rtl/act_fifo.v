@@ -1,14 +1,14 @@
 `timescale 1ns / 1ps
 // ============================================================
 // Module : act_fifo
-// Project : FP4-SPARSA 4x4 Systolic Array Accelerator (v19)
+// Project : FP4-SPARSA 4x4 Systolic Array Accelerator (v20 Final)
 //
 // Synchronous FIFO for activation inputs.
 // Decouples the data producer (CPU/testbench) from the
 // systolic array consumer.
 //
 // Parameters:
-//   DEPTH = 16  : number of entries (must be power of 2)
+//   DEPTH = 64  : number of entries (must be power of 2)
 //   WIDTH = 64  : 4 rows × 16 bits packed internally
 //
 // Write side (producer):
@@ -25,7 +25,7 @@
 //                        rd_en while empty is a no-op (rd_valid stays low)
 //
 // Implementation:
-//   16-entry × 64-bit distributed RAM (LUTRAM).
+//   64-entry × 64-bit distributed RAM (LUTRAM).
 //   4-bit gray-code-free pointers (straight binary, single clock domain).
 //   Full  : (wr_ptr[3:0] == rd_ptr[3:0]) && (wr_ptr[4] != rd_ptr[4])
 //   Empty : wr_ptr == rd_ptr

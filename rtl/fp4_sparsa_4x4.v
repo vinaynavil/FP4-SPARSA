@@ -1,4 +1,8 @@
 `timescale 1ns / 1ps
+// ============================================================
+// Module : fp4_sparsa_4x4
+// Project : FP4-SPARSA 
+// ============================================================
 module fp4_sparsa_4x4 (
     input  wire        s_axi_aclk,
     input  wire        s_axi_aresetn,
@@ -28,9 +32,6 @@ module fp4_sparsa_4x4 (
     output wire [17:0]  result_col1,
     output wire [17:0]  result_col2,
     output wire [17:0]  result_col3,
-    output wire [6:0]   zero_skip_count,
-    output wire [5:0]   sparse_act_count,
-    output wire [5:0]   sparse_wgt_count,
     output wire [3:0]   sat_flags,
     output wire         valid_out,
     output wire         fifo_full,
@@ -46,17 +47,35 @@ module fp4_sparsa_4x4 (
     wire         fifo_rd_valid;
 
     axi_lite_ctrl u_axi_ctrl (
-        .s_axi_aclk(s_axi_aclk), .s_axi_aresetn(s_axi_aresetn),
-        .s_axi_awaddr(s_axi_awaddr), .s_axi_awvalid(s_axi_awvalid), .s_axi_awready(s_axi_awready),
-        .s_axi_wdata(s_axi_wdata), .s_axi_wstrb(s_axi_wstrb), .s_axi_wvalid(s_axi_wvalid), .s_axi_wready(s_axi_wready),
-        .s_axi_bresp(s_axi_bresp), .s_axi_bvalid(s_axi_bvalid), .s_axi_bready(s_axi_bready),
-        .s_axi_araddr(s_axi_araddr), .s_axi_arvalid(s_axi_arvalid), .s_axi_arready(s_axi_arready),
-        .s_axi_rdata(s_axi_rdata), .s_axi_rresp(s_axi_rresp), .s_axi_rvalid(s_axi_rvalid), .s_axi_rready(s_axi_rready),
-        .valid_out(valid_out), .zero_skip_count(zero_skip_count),
-        .sparse_act_count(sparse_act_count), .sparse_wgt_count(sparse_wgt_count), .sat_flags(sat_flags),
-        .fifo_full(fifo_full), .fifo_empty(fifo_empty),
-        .sparse_en(sparse_en_w), .mode(mode_w), .bank_switch(bank_switch_w),
-        .bram_ena(bram_ena_w), .bram_addr(bram_waddr_w), .bram_din(bram_wdata_w)
+        .s_axi_aclk(s_axi_aclk), 
+        .s_axi_aresetn(s_axi_aresetn),
+        .s_axi_awaddr(s_axi_awaddr), 
+        .s_axi_awvalid(s_axi_awvalid), 
+        .s_axi_awready(s_axi_awready),
+        .s_axi_wdata(s_axi_wdata), 
+        .s_axi_wstrb(s_axi_wstrb), 
+        .s_axi_wvalid(s_axi_wvalid), 
+        .s_axi_wready(s_axi_wready),
+        .s_axi_bresp(s_axi_bresp), 
+        .s_axi_bvalid(s_axi_bvalid), 
+        .s_axi_bready(s_axi_bready),
+        .s_axi_araddr(s_axi_araddr), 
+        .s_axi_arvalid(s_axi_arvalid), 
+        .s_axi_arready(s_axi_arready),
+        .s_axi_rdata(s_axi_rdata), 
+        .s_axi_rresp(s_axi_rresp), 
+        .s_axi_rvalid(s_axi_rvalid), 
+        .s_axi_rready(s_axi_rready),
+        .valid_out(valid_out), 
+        .sat_flags(sat_flags),
+        .fifo_full(fifo_full), 
+        .fifo_empty(fifo_empty),
+        .sparse_en(sparse_en_w), 
+        .mode(mode_w), 
+        .bank_switch(bank_switch_w),
+        .bram_ena(bram_ena_w), 
+        .bram_addr(bram_waddr_w), 
+        .bram_din(bram_wdata_w)
     );
 
     // ── BRAM weight buffer ────────────────────────────────────
@@ -76,10 +95,15 @@ module fp4_sparsa_4x4 (
         else                 bram_raddr_r <= bram_waddr_w;
     end
 
+    reg load_lo_r0, load_hi_r0;  // 1-cycle registered (intermediate)
+    reg load_lo_r,  load_hi_r;   // 2-cycle registered (fires when dout_b valid)
+
+    wire bram_enb_w = bram_ena_w | load_lo_r0 | load_hi_r0 | load_lo_r | load_hi_r;
+
     weight_bram u_weight_bram (
         .clk(s_axi_aclk),
         .ena_a(bram_ena_w), .addr_a(bram_waddr_w), .din_a(bram_wdata_w),
-        .addr_b(bram_raddr_r), .dout_b(bram_rdata_w)
+        .enb_b(bram_enb_w), .addr_b(bram_raddr_r), .dout_b(bram_rdata_w)
     );
 
     // load_lo_r / load_hi_r: 2-cycle delayed to match BRAM read latency.
@@ -88,8 +112,6 @@ module fp4_sparsa_4x4 (
     // Cycle N+1: bram_raddr_r = X, addr_b presented to BRAM
     //            dout_b = mem[prev] (stale)
     // Cycle N+2: dout_b = mem[X] (valid) <- load fires HERE
-    reg load_lo_r0, load_hi_r0;  // 1-cycle registered (intermediate)
-    reg load_lo_r,  load_hi_r;   // 2-cycle registered (fires when dout_b valid)
     always @(posedge s_axi_aclk) begin
         if (!s_axi_aresetn) begin
             load_lo_r0 <= 1'b0; load_hi_r0 <= 1'b0;
@@ -127,8 +149,7 @@ module fp4_sparsa_4x4 (
         .valid_in(fifo_rd_valid),
         .result_col0(result_col0), .result_col1(result_col1),
         .result_col2(result_col2), .result_col3(result_col3),
-        .zero_skip_count(zero_skip_count), .sparse_act_count(sparse_act_count),
-        .sparse_wgt_count(sparse_wgt_count), .sat_flags(sat_flags),
+        .sat_flags(sat_flags),
         .valid_out(valid_out)
     );
 

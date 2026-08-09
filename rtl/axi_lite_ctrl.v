@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================
 // Module : axi_lite_ctrl  (v2 - BRAM weight buffer)
-// Project : FP4-SPARSA 4x4 Systolic Array Accelerator
+// Project : FP4-SPARSA 4x4 Systolic Array Accelerator (v20 Final)
 //
 // Register map (byte address, word-aligned):
 //   0x00  CTRL        [W/R]
@@ -10,12 +10,11 @@
 //           [2]  bank_switch
 //   0x04  STATUS      [R]
 //           [0]      valid_out
-//           [7:1]    zero_skip_count[6:0]
-//           [13:8]   sparse_act_count[5:0]
-//           [19:14]  sparse_wgt_count[5:0]
+//           [19:1]   reserved (0)
 //           [23:20]  sat_flags[3:0]
 //           [24]     fifo_empty
 //           [25]     fifo_full
+//           [31:26]  reserved (0)
 //   0x08  WADDR       [W/R]  [2:0] BRAM write address (0-7)
 //   0x0C  WDATA_LO    [W]    bits [95:0] of 128-bit weight word
 //                            written as three sequential 32-bit writes
@@ -77,12 +76,9 @@ module axi_lite_ctrl (
 
     // Status inputs from systolic array
     input  wire        valid_out,
-    input  wire [6:0]  zero_skip_count,
-    input  wire [5:0]  sparse_act_count,
-    input  wire [5:0]  sparse_wgt_count,
     input  wire [3:0]  sat_flags,
 
-    // Status inputs from activation FIFO (v19)
+    // Status inputs from activation FIFO (v20 Final)
     input  wire        fifo_full,
     input  wire        fifo_empty,
 
@@ -225,8 +221,7 @@ module axi_lite_ctrl (
     end
 
     // ── Read channel ─────────────────────────────────────────
-    wire [31:0] status_reg = {6'd0, fifo_full, fifo_empty, sat_flags, sparse_wgt_count,
-                               sparse_act_count, zero_skip_count, valid_out};
+    wire [31:0] status_reg = {6'd0, fifo_full, fifo_empty, sat_flags, 19'd0, valid_out};
     wire [31:0] ctrl_reg   = {29'd0, bank_switch, mode, sparse_en};
 
     always @(posedge s_axi_aclk) begin

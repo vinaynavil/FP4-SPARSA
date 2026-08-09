@@ -31,9 +31,6 @@ module tb_weight_bram;
 
     // Dummy status
     reg        valid_out_i      = 0;
-    reg [6:0]  zero_skip_count_i = 0;
-    reg [5:0]  sparse_act_count_i = 0;
-    reg [5:0]  sparse_wgt_count_i = 0;
     reg [3:0]  sat_flags_i      = 0;
 
     wire sparse_en, mode, bank_switch;
@@ -63,9 +60,6 @@ module tb_weight_bram;
         .s_axi_rvalid     (rvalid),
         .s_axi_rready     (rready),
         .valid_out        (valid_out_i),
-        .zero_skip_count  (zero_skip_count_i),
-        .sparse_act_count (sparse_act_count_i),
-        .sparse_wgt_count (sparse_wgt_count_i),
         .sat_flags        (sat_flags_i),
         .fifo_full        (1'b0),
         .fifo_empty       (1'b1),
@@ -86,6 +80,7 @@ module tb_weight_bram;
         .ena_a  (bram_ena),
         .addr_a (bram_addr),
         .din_a  (bram_din),
+        .enb_b  (1'b1),
         .addr_b (bram_raddr),
         .dout_b (bram_dout)
     );

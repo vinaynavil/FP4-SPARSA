@@ -1,14 +1,14 @@
 `timescale 1ns/1ps
-// =============================================================
-// Module : pe_pipelined
-// Project : FP4-SPARSA v19
+// ============================================================
+// Module : pe_pipelined (v20 Final)
+// Project : FP4-SPARSA 
 //
-// Pipeline: 5 cycles end-to-end
-//   Stage 1  : operand register (w_op, a_op, acc, lane_zero)
+// Pipeline: 4 cycles end-to-end
+//   Stage 1  : operand register + skip pre-computation
 //   Stage 2  : 4 × 8×8 signed multiply → prod_s2[0:3]
 //   Stage 3a : pairwise adder tree, level 1, partial sums (registered)
 //   Stage 3b : accumulate + saturate → acc_s3 (registered)
-//   Output   : acc_out = acc_s3 (wire, 0 extra cycles)  
+//   Output   : acc_out = acc_s3 (wire, 0 extra cycles)
 //
 // fixed act_out - was latching from stage 3a, gave 4 cycle delay
 // instead of the 1 cycle skew systolic needs. now latches act_in
@@ -25,9 +25,12 @@
 //   - Removed unused lane_zero_s2 pipeline (was carried through
 //     Stage 2 but never read in Stage 3a/3b - dead registers,
 //     saves 4 FFs).
-//   - sparse_en_s2 pipeline removed: sparse_en gating already
-//     applied in Stage 2 multiply using sparse_en_s1 (correct).
-//     The additional s2 copy was never used downstream.
+//
+// 4-stage pipelined Processing Element (PE).
+// Stage 1: input latch + pre-computed zero mask evaluation
+// Stage 2: 4 signed 8x8 multipliers (with operand isolation)
+// Stage 3a: 2-stage pairwise adder tree (pipelined)
+// Stage 3b: 18-bit signed accumulation & 18-bit saturation
 // ============================================================
 module pe_pipelined (
     input  wire        clk,
@@ -36,17 +39,18 @@ module pe_pipelined (
     input  wire        mode,
     input  wire [31:0] weight_dec_in,
     input  wire [15:0] weight_raw_in,
+    input  wire [3:0]  wgt_zero_in,     // Pre-computed weight zero mask (v20)
     input  wire [15:0] act_in,
     input  wire [31:0] act_dec_in,
-    output reg  [15:0] act_out,         // 1-cycle delayed act_in (systolic pass-through)
+    input  wire [3:0]  act_zero_in,     // Pre-computed activation zero mask (v20)
+    output reg  [15:0] act_out,         // 1-cycle delayed act_in
+    output reg  [3:0]  act_zero_out,    // 1-cycle delayed act_zero_in (v20)
     input  wire [17:0] acc_in,
     output wire [17:0] acc_out,
     input  wire        valid_in,
-    output reg         valid_out,       // aligned with acc_out (5 cycles after valid_in)
+    output reg         valid_out,       // aligned with acc_out (4 cycles after valid_in)
     output wire        skip_out,
-    output wire        act_zero_out,
     output wire        wgt_zero_out,
-    output wire [2:0]  lane_skip_count,
     output reg         sat_flag
 );
 
@@ -96,70 +100,69 @@ module pe_pipelined (
         end
     endgenerate
 
-    // ── Sparsity detection (combinatorial) ──────────────────
-    // Zero detection uses [2:0] of raw FP4/INT4 - exponent+mantissa
-    // (sign bit excluded so -0 treated as sparse, matching FTZ).
-    wire act_zero_lane [0:3];
-    wire wgt_zero_lane [0:3];
-    generate
-        for (ln = 0; ln < 4; ln = ln + 1) begin : g_sparse
-            assign act_zero_lane[ln] = (a_lane[ln][2:0]     == 3'b000);
-            assign wgt_zero_lane[ln] = (w_lane_raw[ln][2:0] == 3'b000);
-        end
-    endgenerate
-
+    // ── Sparsity evaluation (v20 pre-computed masks) ─────────
     wire lane_zero [0:3];
-    generate
-        for (ln = 0; ln < 4; ln = ln + 1) begin : g_lane_zero
-            assign lane_zero[ln] = act_zero_lane[ln] | wgt_zero_lane[ln];
-        end
-    endgenerate
+    assign lane_zero[0] = act_zero_in[0] | wgt_zero_in[0];
+    assign lane_zero[1] = act_zero_in[1] | wgt_zero_in[1];
+    assign lane_zero[2] = act_zero_in[2] | wgt_zero_in[2];
+    assign lane_zero[3] = act_zero_in[3] | wgt_zero_in[3];
 
-    wire act_zero_all = act_zero_lane[0] & act_zero_lane[1] &
-                        act_zero_lane[2] & act_zero_lane[3];
-    wire wgt_zero_all = wgt_zero_lane[0] & wgt_zero_lane[1] &
-                        wgt_zero_lane[2] & wgt_zero_lane[3];
+    wire act_zero_all = act_zero_in[0] & act_zero_in[1] &
+                        act_zero_in[2] & act_zero_in[3];
+    wire wgt_zero_all = wgt_zero_in[0] & wgt_zero_in[1] &
+                        wgt_zero_in[2] & wgt_zero_in[3];
 
-    assign act_zero_out    = act_zero_all;
     assign wgt_zero_out    = wgt_zero_all;
     assign skip_out        = sparse_en & (lane_zero[0] | lane_zero[1] |
                                           lane_zero[2] | lane_zero[3]);
-    assign lane_skip_count = sparse_en ?
-        ({2'b00, lane_zero[0]} + {2'b00, lane_zero[1]} +
-         {2'b00, lane_zero[2]} + {2'b00, lane_zero[3]}) : 3'd0;
 
-    // ── Stage 1: operand register ────────────────────────────
+    // ── Stage 1: operand register + skip pre-computation ─────
     reg signed [7:0]  w_s1 [0:3];
     reg signed [7:0]  a_s1 [0:3];
     (* shreg_extract = "no" *) reg signed [17:0] acc_s1;
     (* shreg_extract = "no" *) reg               valid_s1;
-    reg               lane_zero_s1 [0:3];
-    reg               sparse_en_s1;
+    reg               skip_s1 [0:3];   // pre-computed gate for Stage 2 MUX
 
     integer i;
     always @(posedge clk) begin
         if (rst) begin
             for (i = 0; i < 4; i = i + 1) begin
-                w_s1[i]         <= 8'sd0;
-                a_s1[i]         <= 8'sd0;
-                lane_zero_s1[i] <= 1'b0;
+                w_s1[i]    <= 8'sd0;
+                a_s1[i]    <= 8'sd0;
+                skip_s1[i] <= 1'b1;
             end
-            acc_s1       <= 18'sd0;
+            acc_s1   <= 18'sd0;
             valid_s1     <= 1'b0;
             act_out      <= 16'd0;   // ← systolic pass-through: 1-cycle delay on act_in
-            sparse_en_s1 <= 1'b0;
+            act_zero_out <= 4'd0;
         end else begin
             for (i = 0; i < 4; i = i + 1) begin
-                w_s1[i]         <= w_op[i];
-                a_s1[i]         <= a_op[i];
-                lane_zero_s1[i] <= lane_zero[i];
+                // Gate operand register updates with valid_in (reduces clock switching)
+                if (valid_in) begin
+                    w_s1[i] <= w_op[i];
+                    a_s1[i] <= a_op[i];
+                end
+                // Pre-compute Stage 2 gate: folds ~valid + sparse & lane_zero
+                // into single FF. Stage 2 MUX select is 0 comb. LUT levels.
+                skip_s1[i] <= ~valid_in | (sparse_en & lane_zero[i]);
             end
             acc_s1       <= acc_in;
             valid_s1     <= valid_in;
             act_out      <= act_in;
-            sparse_en_s1 <= sparse_en;
+            act_zero_out <= act_zero_in;
         end
     end
+
+    // ── Dual-Operand Isolation (Weight & Activation) ─────────────
+    wire signed [7:0] w_iso [0:3];
+    wire signed [7:0] a_iso [0:3];
+
+    generate
+        for (ln = 0; ln < 4; ln = ln + 1) begin : g_operand_isolation
+            assign w_iso[ln] = (skip_s1[ln]) ? 8'sd0 : w_s1[ln];
+            assign a_iso[ln] = (skip_s1[ln]) ? 8'sd0 : a_s1[ln];
+        end
+    endgenerate
 
     // ── Stage 2: 4 × signed multiply ────────────────────────
     (* use_dsp = "yes" *) reg signed [16:0] prod_s2 [0:3];
@@ -170,18 +173,14 @@ module pe_pipelined (
         if (rst) begin
             prod_s2[0] <= 17'sd0; prod_s2[1] <= 17'sd0;
             prod_s2[2] <= 17'sd0; prod_s2[3] <= 17'sd0;
-            acc_s2  <= 18'sd0;
+            acc_s2   <= 18'sd0;
             valid_s2 <= 1'b0;
         end else begin
-            prod_s2[0] <= (~valid_s1 || (sparse_en_s1 & lane_zero_s1[0]))
-                          ? 17'sd0 : w_s1[0] * a_s1[0];
-            prod_s2[1] <= (~valid_s1 || (sparse_en_s1 & lane_zero_s1[1]))
-                          ? 17'sd0 : w_s1[1] * a_s1[1];
-            prod_s2[2] <= (~valid_s1 || (sparse_en_s1 & lane_zero_s1[2]))
-                          ? 17'sd0 : w_s1[2] * a_s1[2];
-            prod_s2[3] <= (~valid_s1 || (sparse_en_s1 & lane_zero_s1[3]))
-                          ? 17'sd0 : w_s1[3] * a_s1[3];
-            acc_s2  <= acc_s1;
+            prod_s2[0] <= valid_s1 ? (w_iso[0] * a_iso[0]) : 17'sd0;
+            prod_s2[1] <= valid_s1 ? (w_iso[1] * a_iso[1]) : 17'sd0;
+            prod_s2[2] <= valid_s1 ? (w_iso[2] * a_iso[2]) : 17'sd0;
+            prod_s2[3] <= valid_s1 ? (w_iso[3] * a_iso[3]) : 17'sd0;
+            acc_s2   <= acc_s1;
             valid_s2 <= valid_s1;
         end
     end
@@ -209,10 +208,12 @@ module pe_pipelined (
             acc_s3a      <= 18'sd0;
             valid_s3a    <= 1'b0;
         end else begin
-            wt_l1_hi_s3a <= wt_l1_hi_comb;
-            wt_l1_lo_s3a <= wt_l1_lo_comb;
-            acc_s3a      <= acc_s2;
-            valid_s3a    <= valid_s2;
+            if (valid_s2) begin
+                wt_l1_hi_s3a <= wt_l1_hi_comb;
+                wt_l1_lo_s3a <= wt_l1_lo_comb;
+                acc_s3a      <= acc_s2;
+            end
+            valid_s3a <= valid_s2;
         end
     end
 
