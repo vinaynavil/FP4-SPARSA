@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array</title>
-<meta name="description" content="Sparsity-Aware FP4 Systolic Array MAC Accelerator — Verilog RTL + Python Demo | Kintex-7 FPGA | 350MHz | 44.8 GOPS">
+<meta name="description" content="Sparsity-Aware FP4 Systolic Array MAC Accelerator — Verilog RTL + Python Demo | Kintex-7 FPGA | 350.017 MHz | 44.8 GOPS | 265.1 GOPS/W">
 <link rel="canonical" href="https://vinaynavil.github.io/FP4-SPARSA/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -260,7 +260,7 @@
   <div class="stat-grid">
     <div><span class="stat-num" data-target="350" data-decimals="0" data-suffix="MHz">0</span><span class="stat-cap">Clock frequency</span></div>
     <div><span class="stat-num" data-target="44.8" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS throughput</span></div>
-    <div><span class="stat-num" data-target="263.5" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS per watt</span></div>
+    <div><span class="stat-num" data-target="265.1" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS per watt</span></div>
   </div>
 </div>
 
@@ -294,7 +294,7 @@
     <div class="section-head">
       <p class="eyebrow-sm">Architecture</p>
       <h2>A systolic array,<br>refined.</h2>
-      <p class="section-desc">Weights stay put. Activations stream through. Decode happens once, at the boundary — not sixteen times over.</p>
+      <p class="section-desc">Weights stay put. Activations stream through. Decode and raw zero checking happen cleanly with 4-stage pipelining.</p>
     </div>
     <div class="diagram">
       <svg xmlns="http://www.w3.org/2000/svg" width="900" height="810" viewBox="0 0 900 810" style="background:white">
@@ -327,7 +327,7 @@
 <rect x="34" y="52" width="280" height="100" rx="14" class="box"/>
 <text x="50" y="80" class="lbl">AXI-Lite Control</text>
 <text x="50" y="98" class="sub">5-bit addr · slave</text>
-<text x="50" y="116" class="sub">CTRL · STATUS · WADDR · WDATA</text>
+<text x="50" y="116" class="sub">CTRL · STATUS · WADDR · WDATA_LO · WDATA_HI</text>
 
 <!-- Weight BRAM -->
 <rect x="586" y="52" width="264" height="100" rx="14" class="box"/>
@@ -338,7 +338,7 @@
 <!-- Systolic Array -->
 <rect x="34" y="176" width="816" height="282" rx="16" class="box"/>
 <text x="50" y="204" class="lbl">Systolic Array (4×4)</text>
-<text x="50" y="220" class="sub">decode_fp4 / build_dec_word — FP4 (4-bit) → 8-bit fixed point (Q1.1), FTZ applied</text>
+<text x="50" y="220" class="sub">decode_fp4 / calc_zero_mask — FP4 (4-bit) → 8-bit signed integer (Scaled ×2), FTZ applied</text>
 
 <text x="50" y="240" class="flow-label">weights stationary</text>
 <path class="flow-arrow" d="M137,244 V258" marker-end="url(#arrow-blue)"/>
@@ -419,47 +419,41 @@
 
 <!-- PE pipeline detail panel -->
 <rect x="8" y="578" width="884" height="216" rx="20" fill="none" stroke="#e5e5e7" stroke-dasharray="4,4"/>
-<text x="30" y="604" class="sub">PROCESSING ELEMENT ARCHITECTURE — ONE LANE, EXPANDED (5 STAGES)</text>
+<text x="30" y="604" class="sub">PROCESSING ELEMENT ARCHITECTURE — ONE LANE, EXPANDED (4 STAGES)</text>
 
-<rect x="34" y="620" width="150" height="140" rx="12" class="stage-box"/>
-<text x="50" y="640" class="lbl" font-size="11">1 · Operand Reg</text>
-<text x="50" y="658" class="sub">CE-gated capture of</text>
-<text x="50" y="672" class="sub">pre-decoded act/weight</text>
-<text x="50" y="690" class="sub">8-bit (Q1.1)</text>
+<rect x="34" y="620" width="190" height="140" rx="12" class="stage-box"/>
+<text x="50" y="640" class="lbl" font-size="11">1 · Operand Isolation</text>
+<text x="50" y="658" class="sub">Stage 1 register &amp; zero-gating</text>
+<text x="50" y="672" class="sub">w_iso / a_iso forced to 0</text>
+<text x="50" y="690" class="sub">controlled by sparse_en</text>
 
-<rect x="204" y="620" width="150" height="140" rx="12" class="stage-box"/>
-<text x="220" y="640" class="lbl" font-size="11">2 · Multiply</text>
-<text x="220" y="658" class="sub">unconditional —</text>
-<text x="220" y="672" class="sub">4-lane DSP48E1</text>
-<text x="220" y="690" class="sub">MREG/AREG=1</text>
+<rect x="244" y="620" width="190" height="140" rx="12" class="stage-box"/>
+<text x="260" y="640" class="lbl" font-size="11">2 · DSP Multiplication</text>
+<text x="260" y="658" class="sub">4-lane DSP48E1 signed 8×8</text>
+<text x="260" y="672" class="sub">multiplies 0×0 on zero lane</text>
+<text x="260" y="690" class="sub">MREG=1 / AREG=1</text>
 
-<rect x="374" y="620" width="150" height="140" rx="12" class="stage-box"/>
-<text x="390" y="640" class="lbl" font-size="11">3 · Zero Detect</text>
-<text x="390" y="658" class="sub">+ CE gate on result</text>
-<text x="390" y="672" class="sub">suppresses stages 4–5</text>
-<text x="390" y="690" class="sub">controlled by sparse_en</text>
+<rect x="454" y="620" width="190" height="140" rx="12" class="stage-box"/>
+<text x="470" y="640" class="lbl" font-size="11">3a · Pairwise Adder Tree</text>
+<text x="470" y="658" class="sub">Level-1 registered summation</text>
+<text x="470" y="672" class="sub">(prod0+prod1, prod2+prod3)</text>
+<text x="470" y="690" class="sub">keeps critical path short</text>
 
-<rect x="544" y="620" width="150" height="140" rx="12" class="stage-box"/>
-<text x="560" y="640" class="lbl" font-size="11">4 · Adder Tree</text>
-<text x="560" y="658" class="sub">pairwise reduction,</text>
-<text x="560" y="672" class="sub">2-stage pipelined</text>
+<rect x="664" y="620" width="190" height="140" rx="12" class="stage-box"/>
+<text x="680" y="640" class="lbl" font-size="11">3b · Accumulate &amp; Sat</text>
+<text x="680" y="658" class="sub">18-bit saturating sum</text>
+<text x="680" y="672" class="sub">overflow clipping</text>
+<text x="680" y="690" class="sub">valid_out aligned</text>
 
-<rect x="714" y="620" width="150" height="140" rx="12" class="stage-box"/>
-<text x="730" y="640" class="lbl" font-size="11">5 · Accumulate</text>
-<text x="730" y="658" class="sub">18-bit, saturating</text>
-<text x="730" y="672" class="sub">(1 guard bit)</text>
-<text x="730" y="690" class="sub">valid_out shift ×5</text>
-
-<path class="wire" d="M184,689 H204" marker-end="url(#arrow)"/>
-<path class="wire" d="M354,689 H374" marker-end="url(#arrow)"/>
-<path class="wire" d="M524,689 H544" marker-end="url(#arrow)"/>
-<path class="wire" d="M694,689 H714" marker-end="url(#arrow)"/>
+<path class="wire" d="M224,689 H244" marker-end="url(#arrow)"/>
+<path class="wire" d="M434,689 H454" marker-end="url(#arrow)"/>
+<path class="wire" d="M644,689 H664" marker-end="url(#arrow)"/>
 </svg>
     </div>
     <ul class="feature-list">
-      <li><span class="dot"></span><span><strong>Pre-decode at the boundary</strong><span class="sub">Activations and weights convert to 8-bit operands in systolic_array.v before reaching any PE.</span></span></li>
-      <li><span class="dot"></span><span><strong>4-lane MAC per PE</strong><span class="sub">64 DSP48E1 total across the array — MREG and AREG both pinned.</span></span></li>
-      <li><span class="dot"></span><span><strong>18-bit saturating accumulator</strong><span class="sub">One guard bit, no silent overflow.</span></span></li>
+      <li><span class="dot"></span><span><strong>Pre-decode &amp; zero detection at array boundary</strong><span class="sub">Activations and weights convert to 8-bit operands in systolic_array.v before reaching PEs.</span></span></li>
+      <li><span class="dot"></span><span><strong>4-lane MAC per PE</strong><span class="sub">64 DSP48E1 total across the array — MREG and AREG both pinned for 350.017 MHz closure.</span></span></li>
+      <li><span class="dot"></span><span><strong>18-bit saturating accumulator</strong><span class="sub">One guard bit, no silent overflow, clipping to maximum values.</span></span></li>
     </ul>
   </div>
 </section>
@@ -549,8 +543,8 @@ python ui.py</code></pre>
       <li><span class="dot"></span><span><strong>Self-checking Verilog testbench</strong><span class="sub">Assertions compare expected vs. actual results automatically — no manual waveform inspection required.</span></span></li>
       <li><span class="dot"></span><span><strong>FP4 E2M1 decoder verification</strong><span class="sub">All 16 codes checked against their expected decoded values, including FTZ behavior on subnormals.</span></span></li>
       <li><span class="dot"></span><span><strong>Sparse vs. dense mode comparison</strong><span class="sub">sparse_en toggled across test vectors to confirm functional equivalence with zero-skipping on and off.</span></span></li>
-      <li><span class="dot"></span><span><strong>17 / 17 regression tests passed</strong><span class="sub">Full suite, including AXI-Lite register access and weight BRAM read/write.</span></span></li>
-      <li><span class="dot"></span><span><strong>Timing closure achieved</strong><span class="sub">WNS +0.079 ns at 350MHz on the target Kintex-7 part — post-implementation, not just post-synthesis.</span></span></li>
+      <li><span class="dot"></span><span><strong>22 / 22 regression tests passed</strong><span class="sub">Full suite, including AXI-Lite register access, weight BRAM read/write, ping-pong buffering, subnormal FTZ, and multi-vector streaming.</span></span></li>
+      <li><span class="dot"></span><span><strong>Timing closure achieved</strong><span class="sub">WNS +0.114 ns (WHS +0.084 ns) at 350.017 MHz on the target Kintex-7 part — post-implementation, not just post-synthesis.</span></span></li>
     </ul>
   </div>
 </section>
@@ -564,19 +558,21 @@ python ui.py</code></pre>
     <div class="specs-block">
       <div class="specs-cat">Implementation</div>
       <div class="specs-row"><span class="k">Target device</span><span class="v">Kintex-7 xc7k160tfbg676-2</span></div>
-      <div class="specs-row"><span class="k">Clock frequency</span><span class="v">350 MHz</span></div>
-      <div class="specs-row"><span class="k">WNS</span><span class="v">+0.079 ns</span></div>
-      <div class="specs-row"><span class="k">LUTs</span><span class="v">1,926 (1.89%)</span></div>
-      <div class="specs-row"><span class="k">Flip-flops</span><span class="v">2,899 (1.42%)</span></div>
-      <div class="specs-row"><span class="k">BRAM</span><span class="v">2 × BRAM36</span></div>
+      <div class="specs-row"><span class="k">Clock frequency</span><span class="v">350.017 MHz</span></div>
+      <div class="specs-row"><span class="k">WNS (Setup Slack)</span><span class="v">+0.114 ns</span></div>
+      <div class="specs-row"><span class="k">WHS (Hold Slack)</span><span class="v">+0.084 ns</span></div>
+      <div class="specs-row"><span class="k">LUTs</span><span class="v">1,963 (1.94%)</span></div>
+      <div class="specs-row"><span class="k">Flip-flops</span><span class="v">3,974 (1.96%)</span></div>
+      <div class="specs-row"><span class="k">BRAM</span><span class="v">2 × BRAM36 (0.62%)</span></div>
       <div class="specs-row"><span class="k">DSP48E1</span><span class="v">64 (10.67%)</span></div>
 
       <div class="specs-cat">Power &amp; performance</div>
-      <div class="specs-row"><span class="k">Dynamic power</span><span class="v">0.058 W</span></div>
-      <div class="specs-row"><span class="k">Total power</span><span class="v">0.170 W</span></div>
+      <div class="specs-row"><span class="k">Dynamic power</span><span class="v">0.057 W (57 mW)</span></div>
+      <div class="specs-row"><span class="k">Static power</span><span class="v">0.112 W (112 mW)</span></div>
+      <div class="specs-row"><span class="k">Total power</span><span class="v">0.169 W (169 mW)</span></div>
       <div class="specs-row"><span class="k">Throughput</span><span class="v">44.8 GOPS</span></div>
-      <div class="specs-row"><span class="k">Energy efficiency</span><span class="v">263.5 GOPS/W (total on-chip power)</span></div>
-      <div class="specs-row"><span class="k">Testbench</span><span class="v">17 / 17 pass</span></div>
+      <div class="specs-row"><span class="k">Energy efficiency</span><span class="v">265.1 GOPS/W (total on-chip power)</span></div>
+      <div class="specs-row"><span class="k">Testbench</span><span class="v">22 / 22 pass</span></div>
 
       <div class="specs-cat">Sparsity, measured on ResNet-20</div>
       <div class="specs-row"><span class="k">Weight sparsity</span><span class="v">25.3%</span></div>
@@ -585,11 +581,11 @@ python ui.py</code></pre>
       <div class="specs-row"><span class="k">Power saving</span><span class="v">25.2%</span></div>
 
       <div class="specs-cat">AXI-Lite register map</div>
-      <div class="specs-row"><span class="k">CTRL</span><span class="v">0x00 — start, sparse_en</span></div>
-      <div class="specs-row"><span class="k">STATUS</span><span class="v">0x04 — done, fifo_empty(24), fifo_full(25)</span></div>
-      <div class="specs-row"><span class="k">WADDR</span><span class="v">0x08</span></div>
-      <div class="specs-row"><span class="k">WDATA_LO</span><span class="v">0x0C — 3× sequential writes</span></div>
-      <div class="specs-row"><span class="k">WDATA_HI</span><span class="v">0x10 — commits, auto-increments WADDR</span></div>
+      <div class="specs-row"><span class="k">CTRL</span><span class="v">0x00 — start, sparse_en, mode, bank_switch</span></div>
+      <div class="specs-row"><span class="k">STATUS</span><span class="v">0x04 — done, sat_flags(23:20), fifo_empty(24), fifo_full(25)</span></div>
+      <div class="specs-row"><span class="k">WADDR</span><span class="v">0x08 — BRAM write address</span></div>
+      <div class="specs-row"><span class="k">WDATA_LO</span><span class="v">0x0C — 3× sequential writes (bits 95:0)</span></div>
+      <div class="specs-row"><span class="k">WDATA_HI</span><span class="v">0x10 — commits 128-bit word, auto-increments WADDR</span></div>
     </div>
   </div>
 </section>
