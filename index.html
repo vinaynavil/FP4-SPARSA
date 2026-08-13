@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FP4-SPARSA — FP4 Sparse Precision Accelerator Using a Reconfigurable Systolic Array</title>
-<meta name="description" content="Sparsity-Aware FP4 Systolic Array MAC Accelerator — Verilog RTL + Python Demo | Kintex-7 FPGA | 350.017 MHz | 44.8 GOPS | 265.1 GOPS/W">
+<meta name="description" content="Sparsity-Aware FP4 Systolic Array MAC Accelerator — Verilog RTL + Python Demo | Kintex-7 FPGA | 350.017 MHz | 44.8 GOPS | 290.9 GOPS/W">
 <link rel="canonical" href="https://vinaynavil.github.io/FP4-SPARSA/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -260,7 +260,7 @@
   <div class="stat-grid">
     <div><span class="stat-num" data-target="350" data-decimals="0" data-suffix="MHz">0</span><span class="stat-cap">Clock frequency</span></div>
     <div><span class="stat-num" data-target="44.8" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS throughput</span></div>
-    <div><span class="stat-num" data-target="265.1" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS per watt</span></div>
+    <div><span class="stat-num" data-target="290.9" data-decimals="1" data-suffix="">0</span><span class="stat-cap">GOPS per watt</span></div>
   </div>
 </div>
 
@@ -269,7 +269,7 @@
     <div class="section-head">
       <p class="eyebrow-sm">Sparsity Engine</p>
       <h2>It only computes<br>what's not zero.</h2>
-      <p class="section-desc">Every PE holds 4 parallel MAC lanes. Flip <code class="mono">sparse_en</code> below and watch the array gate off any lane whose operand decoded to zero — in silicon, that's a DSP48E1 slice going idle instead of multiplying by nothing.</p>
+      <p class="section-desc">Every PE holds 4 parallel MAC lanes. Flip <code class="mono">sparse_en</code> below and watch the array gate off any lane whose operand decoded to zero — in silicon, that's a DSP48E1 slice multiplying zero by zero instead of a real value, cutting switching activity at the multiplier input.</p>
     </div>
     <div class="card">
       <div class="demo-controls">
@@ -279,13 +279,13 @@
         </div>
         <div class="demo-readout">
           <span class="big" id="skipReadout">0.0%</span>
-          <span class="cap">lanes skipped</span>
+          <span class="cap">lanes gated</span>
         </div>
       </div>
       <div class="pe-grid" id="peGrid"></div>
-      <div class="demo-caption">16 PEs × 4 lanes = 64 lanes, mapped 1:1 to the 64 on-device DSP48E1s.</div>
+      <div class="demo-caption">16 PEs × 4 lanes = 64 multiply lanes, each mapped 1:1 to a DSP48E1 (80 DSP48E1 used on-device in total, including one accumulate-stage DSP per PE).</div>
     </div>
-    <p style="text-align:center; font-size:14px; color:var(--gray); margin-top:20px; max-width:560px; margin-left:auto; margin-right:auto;">63% is the measured figure on ResNet-20 / CIFAR-10: 25.3% weight sparsity and 50.5% activation sparsity combine, since a MAC lane is skipped whenever <em>either</em> operand is zero.</p>
+    <p style="text-align:center; font-size:14px; color:var(--gray); margin-top:20px; max-width:560px; margin-left:auto; margin-right:auto;">63% is the measured figure on ResNet-20 / CIFAR-10: 25.3% weight sparsity and 50.5% activation sparsity combine, since a MAC lane is gated whenever <em>either</em> operand is zero. Gating affects switching power only — it does not change cycle count or throughput.</p>
   </div>
 </section>
 
@@ -430,7 +430,7 @@
 <rect x="244" y="620" width="190" height="140" rx="12" class="stage-box"/>
 <text x="260" y="640" class="lbl" font-size="11">2 · DSP Multiplication</text>
 <text x="260" y="658" class="sub">4-lane DSP48E1 signed 8×8</text>
-<text x="260" y="672" class="sub">multiplies 0×0 on zero lane</text>
+<text x="260" y="672" class="sub">multiplies 0×0 on gated lane</text>
 <text x="260" y="690" class="sub">MREG=1 / AREG=1</text>
 
 <rect x="454" y="620" width="190" height="140" rx="12" class="stage-box"/>
@@ -442,7 +442,7 @@
 <rect x="664" y="620" width="190" height="140" rx="12" class="stage-box"/>
 <text x="680" y="640" class="lbl" font-size="11">3b · Accumulate &amp; Sat</text>
 <text x="680" y="658" class="sub">18-bit saturating sum</text>
-<text x="680" y="672" class="sub">overflow clipping</text>
+<text x="680" y="672" class="sub">1 DSP48E1 per PE, overflow clip</text>
 <text x="680" y="690" class="sub">valid_out aligned</text>
 
 <path class="wire" d="M224,689 H244" marker-end="url(#arrow)"/>
@@ -452,7 +452,7 @@
     </div>
     <ul class="feature-list">
       <li><span class="dot"></span><span><strong>Pre-decode &amp; zero detection at array boundary</strong><span class="sub">Activations and weights convert to 8-bit operands in systolic_array.v before reaching PEs.</span></span></li>
-      <li><span class="dot"></span><span><strong>4-lane MAC per PE</strong><span class="sub">64 DSP48E1 total across the array — MREG and AREG both pinned for 350.017 MHz closure.</span></span></li>
+      <li><span class="dot"></span><span><strong>4-lane MAC per PE</strong><span class="sub">64 DSP48E1 multiply lanes plus 1 accumulate-stage DSP48E1 per PE — 80 DSP48E1 total, MREG and AREG both pinned for 350.017 MHz closure.</span></span></li>
       <li><span class="dot"></span><span><strong>18-bit saturating accumulator</strong><span class="sub">One guard bit, no silent overflow, clipping to maximum values.</span></span></li>
     </ul>
   </div>
@@ -540,11 +540,11 @@ python ui.py</code></pre>
       <p class="section-desc">A design that closes timing isn't the same as one that's verified. Both matter to the people who'll review this.</p>
     </div>
     <ul class="feature-list">
-      <li><span class="dot"></span><span><strong>Self-checking Verilog testbench</strong><span class="sub">Assertions compare expected vs. actual results automatically — no manual waveform inspection required.</span></span></li>
+      <li><span class="dot"></span><span><strong>Self-checking Verilog testbench</strong><span class="sub">An inline golden reference model computes expected results in software and checks every test round automatically — no hand-typed expected values.</span></span></li>
       <li><span class="dot"></span><span><strong>FP4 E2M1 decoder verification</strong><span class="sub">All 16 codes checked against their expected decoded values, including FTZ behavior on subnormals.</span></span></li>
-      <li><span class="dot"></span><span><strong>Sparse vs. dense mode comparison</strong><span class="sub">sparse_en toggled across test vectors to confirm functional equivalence with zero-skipping on and off.</span></span></li>
-      <li><span class="dot"></span><span><strong>22 / 22 regression tests passed</strong><span class="sub">Full suite, including AXI-Lite register access, weight BRAM read/write, ping-pong buffering, subnormal FTZ, and multi-vector streaming.</span></span></li>
-      <li><span class="dot"></span><span><strong>Timing closure achieved</strong><span class="sub">WNS +0.114 ns (WHS +0.084 ns) at 350.017 MHz on the target Kintex-7 part — post-implementation, not just post-synthesis.</span></span></li>
+      <li><span class="dot"></span><span><strong>Sparse vs. dense mode comparison</strong><span class="sub">sparse_en toggled across test vectors to confirm functional equivalence with operand isolation on and off — gating changes power, not correctness.</span></span></li>
+      <li><span class="dot"></span><span><strong>22 / 22 regression tests passed</strong><span class="sub">Full suite, including AXI-Lite register access, weight BRAM read/write, ping-pong buffering, subnormal FTZ, multi-vector streaming, and randomized stimulus.</span></span></li>
+      <li><span class="dot"></span><span><strong>Timing closure achieved</strong><span class="sub">WNS +0.205 ns (WHS +0.082 ns) at 350.017 MHz on the target Kintex-7 (xc7k160tfbg676-2) — post-implementation, not just post-synthesis.</span></span></li>
     </ul>
   </div>
 </section>
@@ -559,30 +559,30 @@ python ui.py</code></pre>
       <div class="specs-cat">Implementation</div>
       <div class="specs-row"><span class="k">Target device</span><span class="v">Kintex-7 xc7k160tfbg676-2</span></div>
       <div class="specs-row"><span class="k">Clock frequency</span><span class="v">350.017 MHz</span></div>
-      <div class="specs-row"><span class="k">WNS (Setup Slack)</span><span class="v">+0.114 ns</span></div>
-      <div class="specs-row"><span class="k">WHS (Hold Slack)</span><span class="v">+0.084 ns</span></div>
-      <div class="specs-row"><span class="k">LUTs</span><span class="v">1,963 (1.94%)</span></div>
-      <div class="specs-row"><span class="k">Flip-flops</span><span class="v">3,974 (1.96%)</span></div>
+      <div class="specs-row"><span class="k">WNS (Setup Slack)</span><span class="v">+0.205 ns</span></div>
+      <div class="specs-row"><span class="k">WHS (Hold Slack)</span><span class="v">+0.082 ns</span></div>
+      <div class="specs-row"><span class="k">LUTs</span><span class="v">1,445 (1.43%)</span></div>
+      <div class="specs-row"><span class="k">Flip-flops</span><span class="v">3,380 (1.67%)</span></div>
       <div class="specs-row"><span class="k">BRAM</span><span class="v">2 × BRAM36 (0.62%)</span></div>
-      <div class="specs-row"><span class="k">DSP48E1</span><span class="v">64 (10.67%)</span></div>
+      <div class="specs-row"><span class="k">DSP48E1</span><span class="v">80 (13.33%)</span></div>
 
       <div class="specs-cat">Power &amp; performance</div>
-      <div class="specs-row"><span class="k">Dynamic power</span><span class="v">0.057 W (57 mW)</span></div>
+      <div class="specs-row"><span class="k">Dynamic power</span><span class="v">0.042 W (42 mW)</span></div>
       <div class="specs-row"><span class="k">Static power</span><span class="v">0.112 W (112 mW)</span></div>
-      <div class="specs-row"><span class="k">Total power</span><span class="v">0.169 W (169 mW)</span></div>
+      <div class="specs-row"><span class="k">Total power</span><span class="v">0.154 W (154 mW)</span></div>
       <div class="specs-row"><span class="k">Throughput</span><span class="v">44.8 GOPS</span></div>
-      <div class="specs-row"><span class="k">Energy efficiency</span><span class="v">265.1 GOPS/W (total on-chip power)</span></div>
+      <div class="specs-row"><span class="k">Energy efficiency</span><span class="v">290.9 GOPS/W (total on-chip power)</span></div>
       <div class="specs-row"><span class="k">Testbench</span><span class="v">22 / 22 pass</span></div>
+      <div class="specs-row"><span class="k">Power estimate confidence</span><span class="v">Medium (partial SAIF, 18% net coverage)</span></div>
 
       <div class="specs-cat">Sparsity, measured on ResNet-20</div>
       <div class="specs-row"><span class="k">Weight sparsity</span><span class="v">25.3%</span></div>
       <div class="specs-row"><span class="k">Activation sparsity</span><span class="v">50.5%</span></div>
-      <div class="specs-row"><span class="k">MACs skipped</span><span class="v">63.0%</span></div>
-      <div class="specs-row"><span class="k">Power saving</span><span class="v">25.2%</span></div>
+      <div class="specs-row"><span class="k">MACs skipped (software)</span><span class="v">63.0%</span></div>
 
       <div class="specs-cat">AXI-Lite register map</div>
-      <div class="specs-row"><span class="k">CTRL</span><span class="v">0x00 — start, sparse_en, mode, bank_switch</span></div>
-      <div class="specs-row"><span class="k">STATUS</span><span class="v">0x04 — done, sat_flags(23:20), fifo_empty(24), fifo_full(25)</span></div>
+      <div class="specs-row"><span class="k">CTRL</span><span class="v">0x00 — sparse_en, mode, bank_switch</span></div>
+      <div class="specs-row"><span class="k">STATUS</span><span class="v">0x04 — valid_out, sat_flags(23:20), fifo_empty(24), fifo_full(25)</span></div>
       <div class="specs-row"><span class="k">WADDR</span><span class="v">0x08 — BRAM write address</span></div>
       <div class="specs-row"><span class="k">WDATA_LO</span><span class="v">0x0C — 3× sequential writes (bits 95:0)</span></div>
       <div class="specs-row"><span class="k">WDATA_HI</span><span class="v">0x10 — commits 128-bit word, auto-increments WADDR</span></div>
@@ -684,7 +684,7 @@ python ui.py</code></pre>
   var sparseOn=false;
 
   function shuffledSkipMask(){
-    // exactly round(TOTAL_LANES * SKIP_RATE) lanes marked skipped, position reshuffled each call
+    // exactly round(TOTAL_LANES * SKIP_RATE) lanes marked gated, position reshuffled each call
     var count = Math.round(TOTAL_LANES * SKIP_RATE);
     var idxs = Array.from({length:TOTAL_LANES}, function(_,k){return k;});
     for(var a=idxs.length-1; a>0; a--){
