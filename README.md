@@ -3,7 +3,7 @@
 # FP4-SPARSA: Sparsity-Aware FP4 Systolic Array MAC Accelerator
 
 An FPGA accelerator for low-precision neural-network inference built around a **4×4 weight-stationary systolic array** and **FP4 E2M1** arithmetic.  
-It combines **lane-wise zero-skipping (operand isolation)**, **on-chip dual-port BRAM weight storage with ping-pong buffering**, an **activation FIFO**, and a lightweight **AXI-Lite control path** for a high-frequency, energy-efficient inference engine.
+It combines **lane-wise operand isolation**, **on-chip dual-port BRAM weight storage with ping-pong buffering**, an **activation FIFO**, and a lightweight **AXI-Lite control path** for a high-frequency, energy-efficient inference engine.
 
 ---
 
@@ -12,7 +12,7 @@ It combines **lane-wise zero-skipping (operand isolation)**, **on-chip dual-port
 FP4-SPARSA is a hardware-software co-design project focused on making neural-network inference more efficient with:
 
 - **FP4 E2M1 quantization** (with flush-to-zero and ×2 integer scaling)
-- **Fine-grained lane-wise operand isolation** (gating zero-valued multiplier inputs)
+- **Fine-grained lane-wise operand isolation** (gating zero-valued multiplier inputs before the multiply, not skipping any cycle)
 - **Weight-stationary systolic spatial execution**
 - **On-chip BRAM double-buffering for stall-free weight loading**
 - **A fully closed FPGA physical realization on Xilinx Kintex-7 at 350.017 MHz**
@@ -59,13 +59,13 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 
 **Key design choices:**
 
-- **FP4 E2M1 format** — 16 representable values with flush-to-zero (FTZ) for subnormals and $\times 2$ integer scaling
+- **FP4 E2M1 format** — 16 codes, 13 distinct values after flush-to-zero (FTZ) for subnormals, and $\times 2$ integer scaling
 - **4-lane MAC structure** — parallel FP4 multiplies mapped to dedicated DSP48E1 primitives inside each PE
 - **Weight-stationary dataflow** — weights stay local while activations stream left-to-right through the array
 - **BRAM weight buffer with Ping-Pong switching** — 8×128-bit dual-port BRAM allowing background weight loads without halting computation
 - **Activation input FIFO** — 64-entry LUTRAM FIFO operating in continuous pop mode (`~fifo_empty`)
 - **18-bit saturating accumulator** — guard bit protection and overflow clipping
-- **Stage 1 Zero-Lane Operand Isolation** — forces multiplier inputs to zero during zero cycles (`sparse_en=1`) to eliminate switching activity
+- **Stage 1 Zero-Lane Operand Isolation** — forces multiplier inputs to zero during zero cycles (`sparse_en=1`) to eliminate switching activity; the DSP48E1 still executes the multiply every cycle, it just multiplies 0×0 for gated lanes
 - **AXI-Lite interface** — 5-register memory map for control, status, and 128-bit weight word commits
 
 ---
@@ -74,7 +74,7 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 
 ### FP4 E2M1 format
 
-- 1 sign bit, 2 exponent bits, 1 mantissa bit $\rightarrow$ 16 representable values
+- 1 sign bit, 2 exponent bits, 1 mantissa bit $\rightarrow$ 16 codes, but only **13 distinct decoded values** — the exponent field `00` flushes both mantissa states to zero for both signs (4 codes collapse to a single value: 0)
 - Subnormal exponent (`exp == 00`) $\rightarrow$ flushed to zero (FTZ)
 - Values are scaled $\times 2$ to keep data paths integer-only for DSP48E1 multipliers
 
@@ -106,16 +106,16 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 | **Stage 1** | Operand Register & Isolation | Registers FP4 activation/weight inputs; evaluates `calc_zero_mask` and clamps operands (`w_iso`, `a_iso`) to 0 if zero detected |
 | **Stage 2** | Parallel Multiplication | $4 \times$ DSP48E1 signed $8 \times 8$ multiplications (`use_dsp="yes"`, `MREG=1`, `AREG=1`) |
 | **Stage 3a** | Pairwise Adder Tree | Level-1 registered summation of lane products (`prod0+prod1`, `prod2+prod3`) |
-| **Stage 3b** | Accumulator & Saturation | 18-bit accumulation with overflow detection and clipping to 18'h1FFFF / 18'h20000 |
+| **Stage 3b** | Accumulator & Saturation | 18-bit accumulation with overflow detection and clipping to 18'h1FFFF / 18'h20000; Vivado maps this stage onto one additional DSP48E1 per PE |
 
-- 4 parallel FP4 MAC lanes per PE $\rightarrow$ 64 DSP48E1 primitives total across the 4×4 array
+- 4 parallel FP4 MAC lanes per PE $\rightarrow$ 64 DSP48E1 primitives for multiplication, plus 1 accumulate-stage DSP48E1 per PE $\rightarrow$ **80 DSP48E1 total** across the 4×4 array
 - 18-bit accumulator output aligned with `valid_out` after 19 clock cycles total latency
 
 ### Sparsity detection & Operand Isolation
 
-- Precomputed zero-lane check (`calc_zero_mask`) inspects bits 2:0 of raw FP4 codes during Stage 1
+- Precomputed zero-lane check (`calc_zero_mask`) inspects **bits 2:1** of each raw 4-bit FP4 lane — the exponent bits — during Stage 1. This matches the FTZ rule exactly: the exponent alone determines whether a value flushes to zero, regardless of the mantissa or sign bit, so an exponent-only check catches exact zero, negative zero, and both signed subnormal codes correctly. In INT4 mode, the check instead looks at all 4 raw bits, since INT4 has no exponent field or FTZ rule.
 - When `sparse_en=1` and a zero is detected in either weight or activation lane, multiplier inputs are forced to zero before Stage 2
-- The DSP48E1 multiplies $0 \times 0$ for that lane, dramatically reducing dynamic switching power without altering pipeline latency or cycle counts
+- The DSP48E1 multiplies $0 \times 0$ for that lane, reducing dynamic switching power without altering pipeline latency or cycle counts — this is a power optimization only, not a throughput one
 
 ### Weight buffer & Ping-Pong logic (`weight_bram.v`)
 
@@ -148,17 +148,17 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 |---|---|
 | **Target Device** | Xilinx Kintex-7 (`xc7k160tfbg676-2`) |
 | **Clock Frequency** | **350.017 MHz** ($T_{clk} = 2.857\text{ ns}$) |
-| **Worst Negative Slack (WNS)** | **+0.114 ns** (Timing Closed) |
-| **Worst Hold Slack (WHS)** | **+0.084 ns** |
-| **DSP48E1 Slice Usage** | **64 / 600 (10.67%)** |
-| **Slice LUT Footprint** | **1,963 / 101,400 (1.94%)** (1,877 Logic + 86 Memory) |
-| **Flip-Flop Storage** | **3,974 / 202,800 (1.96%)** |
+| **Worst Negative Slack (WNS)** | **+0.205 ns** (Timing Closed) |
+| **Worst Hold Slack (WHS)** | **+0.082 ns** |
+| **DSP48E1 Slice Usage** | **80 / 600 (13.33%)** — 64 multiply-lane DSPs + 16 accumulate-stage DSPs (1 per PE) |
+| **Slice LUT Footprint** | **1,445 / 101,400 (1.43%)** |
+| **Flip-Flop Storage** | **3,380 / 202,800 (1.67%)** |
 | **Block RAM (BRAM36)** | **2 / 325 (0.62%)** |
-| **Dynamic Power** | **0.057 W** (57 mW) |
+| **Dynamic Power** | **0.042 W** (42 mW) |
 | **Static Power** | **0.112 W** (112 mW) |
-| **Total On-Chip Power** | **0.169 W** (169 mW) (Medium confidence, 18% SAIF net coverage) |
+| **Total On-Chip Power** | **0.154 W** (154 mW) (Medium confidence, ~17% SAIF net coverage) |
 | **Peak Throughput** | **44.8 GOPS** |
-| **Energy Efficiency** | **265.1 GOPS/W** (Total power basis) |
+| **Energy Efficiency** | **290.9 GOPS/W** (Total power basis) |
 | **Verification Suite** | **22 / 22 Testcases PASS** in Vivado XSim (`tb_fp4_sparsa_4x4.v`) |
 
 **Toolflow:** Vivado 2024.2 | `phys_opt_design (ExploreWithRemap)` | `MREG=1`, `AREG=1` on all DSP48E1 instances
@@ -173,8 +173,9 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 |---|---|
 | Weight Sparsity (FP4 + FTZ) | **25.3%** |
 | Activation Sparsity (ReLU + FP4) | **50.5%** |
-| **MAC Operations Skipped** | **63.0%** |
-| **Projected Dynamic Power Saving** | **25.2%** |
+| **MAC Operations Skipped (software model)** | **63.0%** |
+
+A controlled 5-point hardware sweep (0%, 25%, 50%, 75%, 100% activation sparsity, same weight matrix throughout) measured dynamic power moving monotonically from 0.053 W down to 0.051 W — a real, direction-consistent, whole-design measurement, not a software-projected estimate. Sparsity here changes power only; it does not change cycle count or throughput.
 
 ### Accuracy Comparison
 
@@ -203,7 +204,7 @@ python ui.py
 The Tkinter UI features:
 - Live CIFAR-10 test vector preview & ground truth verification
 - Side-by-side FP32 vs FP4 model prediction & confidence cards
-- 10 Kintex-7 physical metric tiles (`350.017 MHz`, `WNS +0.114ns`, `1,963 LUTs`, `0.169W`, `265.1 GOPS/W`)
+- 10 Kintex-7 physical metric tiles (`350.017 MHz`, `WNS +0.205ns`, `1,445 LUTs`, `0.154W`, `290.9 GOPS/W`)
 - Animated progress bars for accuracy and sparsity metrics
 
 ---
