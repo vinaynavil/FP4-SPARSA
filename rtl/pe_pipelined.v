@@ -15,6 +15,11 @@
 // straight in stage 1. (spent way too long on this one)
 // also fixed valid_out being 1 cycle behind acc_out - same root cause
 // removed lane_zero_s2, wasn't even used, just extra FFs
+//
+// v20b: valid_out moved to Stage 1 (1-cycle delay, matching act_out).
+//   Was going through full 4-stage pipeline, causing valid to reach
+//   column 3 at cycle 12 instead of cycle 3 in the systolic array.
+//   Internal valid pipeline (valid_s1/s2/s3a) kept for gating.
 //   - valid_out: was delayed one extra cycle beyond acc_out
 //     (valid_out ← valid_s3 ← valid_s3a; acc_out ← acc_s3).
 //     FIXED: valid_out now registered alongside acc_s3 in the
@@ -48,7 +53,7 @@ module pe_pipelined (
     input  wire [17:0] acc_in,
     output wire [17:0] acc_out,
     input  wire        valid_in,
-    output reg         valid_out,       // aligned with acc_out (4 cycles after valid_in)
+    output reg         valid_out,       // 1-cycle delayed valid_in, aligned with act_out
     output wire        skip_out,
     output wire        wgt_zero_out,
     output reg         sat_flag
@@ -135,6 +140,7 @@ module pe_pipelined (
             valid_s1     <= 1'b0;
             act_out      <= 16'd0;   // ← systolic pass-through: 1-cycle delay on act_in
             act_zero_out <= 4'd0;
+            valid_out    <= 1'b0;    // ← systolic pass-through: 1-cycle delay on valid_in
         end else begin
             for (i = 0; i < 4; i = i + 1) begin
                 // Gate operand register updates with valid_in (reduces clock switching)
@@ -150,6 +156,7 @@ module pe_pipelined (
             valid_s1     <= valid_in;
             act_out      <= act_in;
             act_zero_out <= act_zero_in;
+            valid_out    <= valid_in;  // 1-cycle delay, matches act_out
         end
     end
 
@@ -220,11 +227,9 @@ module pe_pipelined (
     // ── Stage 3b: accumulate + saturate ─────────────────────
     // 19-bit intermediate to detect overflow before truncation.
     wire signed [18:0] mac_result =
-        (~valid_s3a)
-            ? $signed({acc_s3a[17], acc_s3a})
-            : $signed({acc_s3a[17],    acc_s3a})
-            + $signed({wt_l1_hi_s3a[17], wt_l1_hi_s3a})
-            + $signed({wt_l1_lo_s3a[17], wt_l1_lo_s3a});
+        $signed({acc_s3a[17], acc_s3a})
+        + $signed({wt_l1_hi_s3a[17], wt_l1_hi_s3a})
+        + $signed({wt_l1_lo_s3a[17], wt_l1_lo_s3a});
 
     wire sat_overflow = (mac_result[18] != mac_result[17]);
     wire [17:0] sat_result = sat_overflow
@@ -236,7 +241,6 @@ module pe_pipelined (
     always @(posedge clk) begin
         if (rst) begin
             acc_s3    <= 18'sd0;
-            valid_out <= 1'b0;
             sat_flag  <= 1'b0;
         end else begin
             // Only update acc_s3 when valid data exits the pipeline.
@@ -245,7 +249,6 @@ module pe_pipelined (
                 acc_s3   <= sat_result;
                 sat_flag <= sat_overflow;
             end
-            valid_out <= valid_s3a;
         end
     end
 

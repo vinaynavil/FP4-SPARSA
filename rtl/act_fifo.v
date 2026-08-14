@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================
 // Module : act_fifo
-// Project : FP4-SPARSA 4x4 Systolic Array Accelerator (v20 Final)
+// Project : FP4-SPARSA 
 //
 // Synchronous FIFO for activation inputs.
 // Decouples the data producer (CPU/testbench) from the
@@ -33,7 +33,7 @@
 //
 // Timing:
 //   All outputs registered. rd_valid lags rd_en by 1 cycle.
-//   LUTRAM read is synchronous — no combinatorial path from
+//   LUTRAM read is synchronous - no combinatorial path from
 //   rd_ptr to rd_row outputs. Safe at 350 MHz.
 // ============================================================
 module act_fifo #(

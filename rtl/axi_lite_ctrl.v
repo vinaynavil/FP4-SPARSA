@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================
 // Module : axi_lite_ctrl  (v2 - BRAM weight buffer)
-// Project : FP4-SPARSA 4x4 Systolic Array Accelerator (v20 Final)
+// Project : FP4-SPARSA 
 //
 // Register map (byte address, word-aligned):
 //   0x00  CTRL        [W/R]

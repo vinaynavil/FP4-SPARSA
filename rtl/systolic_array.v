@@ -1,13 +1,13 @@
 `timescale 1ns / 1ps
 // ============================================================
 // Module : systolic_array
-// Project : FP4-SPARSA v20
+// Project: FP4-SPARSA (v20 Final)
 // ============================================================
 module systolic_array (
     input  wire          clk,
     input  wire          rst,
     input  wire          sparse_en,
-    input  wire          mode,
+    input  wire          mode,             // 0 = FP4 E2M1, 1 = INT4
     input  wire          load_weight_lo,
     input  wire          load_weight_hi,
     input  wire          bank_switch,
@@ -65,15 +65,26 @@ function [31:0] build_dec_word;
     end
 endfunction
 
-// ── calc_zero_mask (v20) ──────────────────────────────────────
+// ── calc_zero_mask (v20 mode-aware fix) ───────────────────────
 // Returns 4-bit zero mask for 4 packed FP4/INT4 nibbles.
+// Prevents INT4 -8 (4'b1000) from being misidentified as zero.
 function [3:0] calc_zero_mask;
     input [15:0] raw16;
+    input        mode_in;
     begin
-        calc_zero_mask[0] = (raw16[ 2: 0] == 3'b000);
-        calc_zero_mask[1] = (raw16[ 6: 4] == 3'b000);
-        calc_zero_mask[2] = (raw16[10: 8] == 3'b000);
-        calc_zero_mask[3] = (raw16[14:12] == 3'b000);
+        if (mode_in) begin
+            // INT4 mode: exact 4-bit zero check
+            calc_zero_mask[0] = (raw16[ 3: 0] == 4'b0000);
+            calc_zero_mask[1] = (raw16[ 7: 4] == 4'b0000);
+            calc_zero_mask[2] = (raw16[11: 8] == 4'b0000);
+            calc_zero_mask[3] = (raw16[15:12] == 4'b0000);
+        end else begin
+            // FP4 E2M1 mode: 3-bit check ignoring sign bit (+0 [0000] & -0 [1000])
+            calc_zero_mask[0] = (raw16[ 2: 1] == 2'b00);
+            calc_zero_mask[1] = (raw16[ 6: 5] == 2'b00);
+            calc_zero_mask[2] = (raw16[10: 9] == 2'b00);
+            calc_zero_mask[3] = (raw16[14:13] == 2'b00);
+        end
     end
 endfunction
 
@@ -84,7 +95,7 @@ reg         load_hi_q;         // Stage B trigger for rows 2-3
 
 reg [31:0] weight_dec  [0:1][0:3][0:3];
 reg [15:0] weight_raw  [0:1][0:3][0:3];
-reg [3:0]  weight_zero [0:1][0:3][0:3];  // Pre-computed weight zero masks (v20)
+reg [3:0]  weight_zero [0:1][0:3][0:3];  // Pre-computed weight zero masks
 reg        active_bank;
 
 wire idle_bank = ~active_bank;
@@ -128,14 +139,14 @@ always @(posedge clk) begin
             weight_raw[idle_bank][1][1]  <= wdata_stage[ 95: 80];
             weight_raw[idle_bank][1][2]  <= wdata_stage[111: 96];
             weight_raw[idle_bank][1][3]  <= wdata_stage[127:112];
-            weight_zero[idle_bank][0][0] <= calc_zero_mask(wdata_stage[ 15:  0]);
-            weight_zero[idle_bank][0][1] <= calc_zero_mask(wdata_stage[ 31: 16]);
-            weight_zero[idle_bank][0][2] <= calc_zero_mask(wdata_stage[ 47: 32]);
-            weight_zero[idle_bank][0][3] <= calc_zero_mask(wdata_stage[ 63: 48]);
-            weight_zero[idle_bank][1][0] <= calc_zero_mask(wdata_stage[ 79: 64]);
-            weight_zero[idle_bank][1][1] <= calc_zero_mask(wdata_stage[ 95: 80]);
-            weight_zero[idle_bank][1][2] <= calc_zero_mask(wdata_stage[111: 96]);
-            weight_zero[idle_bank][1][3] <= calc_zero_mask(wdata_stage[127:112]);
+            weight_zero[idle_bank][0][0] <= calc_zero_mask(wdata_stage[ 15:  0], mode);
+            weight_zero[idle_bank][0][1] <= calc_zero_mask(wdata_stage[ 31: 16], mode);
+            weight_zero[idle_bank][0][2] <= calc_zero_mask(wdata_stage[ 47: 32], mode);
+            weight_zero[idle_bank][0][3] <= calc_zero_mask(wdata_stage[ 63: 48], mode);
+            weight_zero[idle_bank][1][0] <= calc_zero_mask(wdata_stage[ 79: 64], mode);
+            weight_zero[idle_bank][1][1] <= calc_zero_mask(wdata_stage[ 95: 80], mode);
+            weight_zero[idle_bank][1][2] <= calc_zero_mask(wdata_stage[111: 96], mode);
+            weight_zero[idle_bank][1][3] <= calc_zero_mask(wdata_stage[127:112], mode);
         end
 
         if (load_hi_q) begin
@@ -155,22 +166,19 @@ always @(posedge clk) begin
             weight_raw[idle_bank][3][1]  <= wdata_stage[ 95: 80];
             weight_raw[idle_bank][3][2]  <= wdata_stage[111: 96];
             weight_raw[idle_bank][3][3]  <= wdata_stage[127:112];
-            weight_zero[idle_bank][2][0] <= calc_zero_mask(wdata_stage[ 15:  0]);
-            weight_zero[idle_bank][2][1] <= calc_zero_mask(wdata_stage[ 31: 16]);
-            weight_zero[idle_bank][2][2] <= calc_zero_mask(wdata_stage[ 47: 32]);
-            weight_zero[idle_bank][2][3] <= calc_zero_mask(wdata_stage[ 63: 48]);
-            weight_zero[idle_bank][3][0] <= calc_zero_mask(wdata_stage[ 79: 64]);
-            weight_zero[idle_bank][3][1] <= calc_zero_mask(wdata_stage[ 95: 80]);
-            weight_zero[idle_bank][3][2] <= calc_zero_mask(wdata_stage[111: 96]);
-            weight_zero[idle_bank][3][3] <= calc_zero_mask(wdata_stage[127:112]);
+            weight_zero[idle_bank][2][0] <= calc_zero_mask(wdata_stage[ 15:  0], mode);
+            weight_zero[idle_bank][2][1] <= calc_zero_mask(wdata_stage[ 31: 16], mode);
+            weight_zero[idle_bank][2][2] <= calc_zero_mask(wdata_stage[ 47: 32], mode);
+            weight_zero[idle_bank][2][3] <= calc_zero_mask(wdata_stage[ 63: 48], mode);
+            weight_zero[idle_bank][3][0] <= calc_zero_mask(wdata_stage[ 79: 64], mode);
+            weight_zero[idle_bank][3][1] <= calc_zero_mask(wdata_stage[ 95: 80], mode);
+            weight_zero[idle_bank][3][2] <= calc_zero_mask(wdata_stage[111: 96], mode);
+            weight_zero[idle_bank][3][3] <= calc_zero_mask(wdata_stage[127:112], mode);
         end
     end
 end
 
 // ── [U3] Activation pre-decode (column 0 only) ───────────────
-// PEs in column 0 receive pre-decoded activations directly.
-// PEs in columns 1-3 receive act_out from the previous column's PE
-// (registered 1-cycle delay) and re-decode from that registered raw value.
 wire [31:0] act_dec_row [0:3];
 assign act_dec_row[0] = build_dec_word(act_row0);
 assign act_dec_row[1] = build_dec_word(act_row1);
@@ -180,7 +188,7 @@ assign act_dec_row[3] = build_dec_word(act_row3);
 // ── Interconnect wires ────────────────────────────────────────
 wire [15:0] act_wire       [0:3][0:3];   // [row][col]: raw activation into PE[r][c]
 wire [31:0] act_dec_wire   [0:3][0:3];   // [row][col]: decoded activation into PE[r][c]
-wire [3:0]  act_zero_wire  [0:3][0:3];   // [row][col]: activation zero mask into PE[r][c] (v20)
+wire [3:0]  act_zero_wire  [0:3][0:3];   // [row][col]: activation zero mask into PE[r][c]
 wire [17:0] acc_wire       [0:4][0:3];   // [row_out][col]: partial accumulator (row 4 = output)
 wire        valid_wire     [0:3][0:3];
 wire        sat_flag_wire  [0:3][0:3];
@@ -197,11 +205,11 @@ assign act_wire[1][0]      = act_row1;
 assign act_wire[2][0]      = act_row2;
 assign act_wire[3][0]      = act_row3;
 
-// Column 0 pre-computed activation zero masks (v20)
-assign act_zero_wire[0][0] = calc_zero_mask(act_row0);
-assign act_zero_wire[1][0] = calc_zero_mask(act_row1);
-assign act_zero_wire[2][0] = calc_zero_mask(act_row2);
-assign act_zero_wire[3][0] = calc_zero_mask(act_row3);
+// Column 0 pre-computed activation zero masks (v20 mode-aware fix)
+assign act_zero_wire[0][0] = calc_zero_mask(act_row0, mode);
+assign act_zero_wire[1][0] = calc_zero_mask(act_row1, mode);
+assign act_zero_wire[2][0] = calc_zero_mask(act_row2, mode);
+assign act_zero_wire[3][0] = calc_zero_mask(act_row3, mode);
 
 // Column 0 pre-decoded activations
 assign act_dec_wire[0][0]  = act_dec_row[0];
@@ -240,7 +248,7 @@ generate
                 .act_dec_in      (act_dec_wire[r][c]),
                 .act_zero_in     (act_zero_wire[r][c]),
                 .act_out         (act_wire[r][c+1]),     // feeds col+1 with 1-cycle delay
-                .act_zero_out    (act_zero_wire[r][c+1]),// feeds col+1 with 1-cycle delay (v20)
+                .act_zero_out    (act_zero_wire[r][c+1]),// feeds col+1 with 1-cycle delay
                 .acc_in          (acc_wire[r][c]),
                 .acc_out         (acc_wire[r+1][c]),     // feeds row+1
                 .valid_in        (valid_wire[r][c]),
@@ -318,26 +326,16 @@ assign sat_flags[3] = sat_flag_wire[0][3] | sat_flag_wire[1][3] |
                       sat_flag_wire[2][3] | sat_flag_wire[3][3];
 
 // ── valid_out: full convergence-latency shift register ───────
-// acc_in has NO bypass at Stage 3b - it passes through every
-// register stage (acc_s1 -> acc_s2 -> acc_s3a) of the receiving
-// PE before being added. So row r's acc_out is only correct once
-// row r-1's acc_out has itself converged AND propagated through
-// a full 4-stage pipe again. With activations held constant:
-//   row 0 converges at cycle 4   (acc_in=0 hardwired, no dependency)
-//   row 1 converges at cycle 8   (row0's result + 4 more stages)
-//   row 2 converges at cycle 12
-//   row 3 converges at cycle 16  (drives result_col via acc_wire[4][*])
-// This counts from THIS module's own valid_in - the activation
-// FIFO's write->rd_valid delay is a separate upstream module and
-// is not re-counted here.
-// Previously this was a fixed 4-cycle counter matching only the
-// single-PE pipeline depth - valid_out fired ~12 cycles before the
-// row0-3 accumulation chain had actually settled.
-reg [15:0] valid_pipe;
+// Total latency = vertical (4 rows × 4 stages = 16 cycles)
+//               + horizontal (3 cols × 1-cycle PE valid delay = 3 cycles)
+//               = 19 cycles.
+// Column 0 converges at posedge 15, column 3 at posedge 18.
+// valid_out must wait for the slowest column (col 3).
+reg [18:0] valid_pipe;
 always @(posedge clk) begin
-    if (rst) valid_pipe <= 16'd0;
-    else     valid_pipe <= {valid_pipe[14:0], valid_in};
+    if (rst) valid_pipe <= 19'd0;
+    else     valid_pipe <= {valid_pipe[17:0], valid_in};
 end
-assign valid_out = valid_pipe[15];
+assign valid_out = valid_pipe[18];
 
 endmodule
