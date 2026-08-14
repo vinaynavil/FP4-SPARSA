@@ -198,8 +198,14 @@ module tb_fp4_sparsa_4x4;
                 for (r = 0; r < 4; r = r + 1) begin
                     pe_sum[r][c] = 18'sd0;
                     for (l = 0; l < 4; l = l + 1) begin
-                        // Sparsity check: low 3 bits == 0
-                        lane_skip = sparse_en & ((a_raw[r][l][2:0] == 3'b000) | (w_raw[r][c][l][2:0] == 3'b000));
+                        // Mode-aware zero-isolation check:
+                        // FP4 mode (mode=0): checks 2-bit exponent (exp==00) to power-gate all FTZ zeros (+0, -0, +0.5, -0.5).
+                        // INT4 mode (mode=1): checks exact 4-bit zero (4'b0000) to prevent INT4 -8 (4'b1000) bug.
+                        if (mode)
+                            lane_skip = sparse_en & ((a_raw[r][l][3:0] == 4'b0000) | (w_raw[r][c][l][3:0] == 4'b0000));
+                        else
+                            lane_skip = sparse_en & ((a_raw[r][l][2:1] == 2'b00) | (w_raw[r][c][l][2:1] == 2'b00));
+
                         if (lane_skip) begin
                             prod[r][c][l] = 17'sd0;
                             skips = skips + 1'b1;
@@ -821,7 +827,7 @@ module tb_fp4_sparsa_4x4;
             8'd12);
 
         do_reset;
-        check_valid_latency(8'd13, 5'd19);
+        check_valid_latency(8'd13, 5'd22);
 
         do_reset;
         $display("--- TC14: [U5] No spurious sat w=4.0/6.0 mix");
