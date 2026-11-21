@@ -61,7 +61,7 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 - **Weight-stationary dataflow** — weights stay local while activations stream left-to-right through the array
 - **BRAM weight buffer with Ping-Pong switching** — 8×128-bit dual-port BRAM allowing background weight loads without halting computation
 - **Activation input FIFO** — 64-entry LUTRAM FIFO operating in continuous pop mode (`~fifo_empty`)
-- **18-bit saturating accumulator** — guard bit protection and overflow clipping
+- **13-bit signed accumulator** — full precision signed accumulation across columns
 - **Stage 1 Zero-Lane Operand Isolation** — forces multiplier inputs to zero during zero cycles (`sparse_en=1`) to eliminate switching activity; the DSP48E1 still executes the multiply every cycle, it just multiplies 0×0 for gated lanes
 - **AXI-Lite interface** — 5-register memory map for control, status, and 128-bit weight word commits
 
@@ -103,10 +103,10 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 | **Stage 1** | Operand Register & Isolation | Registers FP4 activation/weight inputs; evaluates `calc_zero_mask` and clamps operands (`w_iso`, `a_iso`) to 0 if zero detected |
 | **Stage 2** | Parallel Multiplication | $4 \times$ DSP48E1 signed $8 \times 8$ multiplications (`use_dsp="yes"`) |
 | **Stage 3a** | Pairwise Adder Tree | Level-1 registered summation of lane products (`prod0+prod1`, `prod2+prod3`) |
-| **Stage 3b** | Accumulator & Saturation | 18-bit accumulation with overflow detection and clipping to 18'h1FFFF / 18'h20000; Vivado maps this stage onto one additional DSP48E1 per PE |
+| **Stage 3b** | Accumulator | 13-bit signed accumulation; Vivado maps this stage onto one additional DSP48E1 per PE |
 
 - 4 parallel FP4 MAC lanes per PE $\rightarrow$ 64 DSP48E1 primitives for multiplication, plus 1 accumulate-stage DSP48E1 per PE $\rightarrow$ **80 DSP48E1 total** across the 4×4 array
-- 18-bit accumulator output aligned with `valid_out` after 19 clock cycles total latency
+- 13-bit accumulator output aligned with `valid_out` after 10 clock cycles total latency
 
 ### Sparsity detection & Operand Isolation
 
@@ -132,7 +132,7 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 | Register | Address | Description |
 |---|---|---|
 | `CTRL` | `0x00` | Control register. Bit 0 = `sparse_en`, Bit 1 = `mode` (FP4/INT4), Bit 2 = `bank_switch` (1-cycle pulse) |
-| `STATUS` | `0x04` | Status register. Bit 0 = `valid_out`, Bits 23:20 = `sat_flags[3:0]`, Bit 24 = `fifo_empty`, Bit 25 = `fifo_full` |
+| `STATUS` | `0x04` | Status register. Bit 0 = `valid_out`, Bit 24 = `fifo_empty`, Bit 25 = `fifo_full` |
 | `WADDR` | `0x08` | Weight BRAM write address (3-bit, 0 to 7) |
 | `WDATA_LO` | `0x0C` | Weight data low half (3 sequential 32-bit writes fill bits 95:0) |
 | `WDATA_HI` | `0x10` | Weight data high half (supplies bits 127:96, commits 128-bit word, auto-increments `WADDR`) |
