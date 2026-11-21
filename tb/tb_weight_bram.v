@@ -1,9 +1,11 @@
 `timescale 1ns / 1ps
-// ============================================================
-// Testbench : tb_weight_bram
+// ============================================================================
+// Module      : tb_weight_bram
+// Project     : FP4-SPARSA (FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array)
+// ============================================================================
 // Tests BRAM weight buffer write via AXI and read-back
 // through weight_bram Port B.
-// ============================================================
+// ============================================================================
 module tb_weight_bram;
 
     reg clk = 0;
@@ -60,7 +62,6 @@ module tb_weight_bram;
         .s_axi_rvalid     (rvalid),
         .s_axi_rready     (rready),
         .valid_out        (valid_out_i),
-        .sat_flags        (sat_flags_i),
         .fifo_full        (1'b0),
         .fifo_empty       (1'b1),
         .sparse_en        (sparse_en),

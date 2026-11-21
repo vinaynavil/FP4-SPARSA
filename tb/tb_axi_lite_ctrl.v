@@ -1,18 +1,18 @@
 `timescale 1ns / 1ps
-// ============================================================
-// Testbench : tb_axi_lite_ctrl  (v20 Final)
-// Tests AXI-Lite register write/read-back for axi_lite_ctrl v2
-// (BRAM weight-buffer variant).
+// ============================================================================
+// Module      : tb_axi_lite_ctrl
+// Project     : FP4-SPARSA (FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array)
+// ============================================================================
 //
-// Updated vs v17 TB:
-//   - Removed load_weight_lo/hi (no longer ports; pulses are
-//     derived at top level from bram_ena/bram_addr)
-//   - Added fifo_full/fifo_empty status inputs
-//   - awaddr/araddr widened to 5 bits
-//   - STATUS is at 0x04 (not 0x08); includes fifo bits [25:24]
-//   - Added BRAM write-port checks: 3x WDATA_LO + WDATA_HI
-//     assembles 128-bit word, pulses bram_ena, auto-increments
-//   - bank_switch verified as 1-cycle pulse (auto-clear)
+// Tests AXI-Lite register write/read-back for axi_lite_ctrl.
+//
+// Test Plan:
+//   - TC1 & TC2: CTRL register write/read-back and bank_switch 1-cycle pulse.
+//   - TC3      : STATUS register read (valid_out, fifo_empty, fifo_full).
+//   - TC4 & TC6: WADDR register write, read-back, and auto-increment.
+//   - TC5      : 128-bit BRAM write word assembly (3x WDATA_LO + 1x WDATA_HI).
+//   - TC7      : Dynamic clearing of sparse_en control flag.
+//   - TC8      : AXI-Lite out-of-order channel handshake (W asserted before AW).
 // ============================================================
 module tb_axi_lite_ctrl;
 
@@ -41,7 +41,6 @@ module tb_axi_lite_ctrl;
 
     // Dummy status inputs
     reg        valid_out        = 1;
-    reg [3:0]  sat_flags        = 4'b1010;
     reg        fifo_full        = 1'b0;
     reg        fifo_empty       = 1'b1;
 
@@ -88,7 +87,6 @@ module tb_axi_lite_ctrl;
         .s_axi_rvalid     (rvalid),
         .s_axi_rready     (rready),
         .valid_out        (valid_out),
-        .sat_flags        (sat_flags),
         .fifo_full        (fifo_full),
         .fifo_empty       (fifo_empty),
         .sparse_en        (sparse_en),
@@ -202,8 +200,7 @@ module tb_axi_lite_ctrl;
         axi_read(5'h04, rd);
         $display("  STATUS = 0x%08X", rd);
         if (rd[0]     !== 1'b1)    begin $display("  FAIL: valid_out");        errors=errors+1; end
-        if (rd[19:1]  !== 19'd0)   begin $display("  FAIL: reserved status bits [19:1] not zero"); errors=errors+1; end
-        if (rd[23:20] !== 4'b1010) begin $display("  FAIL: sat_flags=%b",   rd[23:20]); errors=errors+1; end
+        if (rd[23:1]  !== 23'd0)   begin $display("  FAIL: reserved status bits [23:1] not zero"); errors=errors+1; end
         if (rd[24]    !== 1'b1)    begin $display("  FAIL: fifo_empty bit");            errors=errors+1; end
         if (rd[25]    !== 1'b0)    begin $display("  FAIL: fifo_full bit");             errors=errors+1; end
         if (errors == 0) $display("  PASS");
