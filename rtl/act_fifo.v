@@ -1,15 +1,16 @@
 `timescale 1ns / 1ps
-// ============================================================
-// Module : act_fifo
-// Project : FP4-SPARSA 
+// ============================================================================
+// Module      : act_fifo
+// Project     : FP4-SPARSA (FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array)
+// Version     : 2.0
+// ============================================================================
 //
 // Synchronous FIFO for activation inputs.
 // Decouples the data producer (CPU/testbench) from the
 // systolic array consumer.
 //
 // Parameters:
-//   DEPTH = 64  : number of entries (must be power of 2)
-//   WIDTH = 64  : 4 rows × 16 bits packed internally
+//   DEPTH = 16         : FIFO storage depth (must be a power of 2)
 //
 // Write side (producer):
 //   wr_en              : push one activation set
@@ -25,11 +26,12 @@
 //                        rd_en while empty is a no-op (rd_valid stays low)
 //
 // Implementation:
-//   64-entry × 64-bit distributed RAM (LUTRAM).
-//   4-bit gray-code-free pointers (straight binary, single clock domain).
-//   Full  : (wr_ptr[3:0] == rd_ptr[3:0]) && (wr_ptr[4] != rd_ptr[4])
-//   Empty : wr_ptr == rd_ptr
-//   This is a standard single-clock FIFO; no CDC needed.
+//   Distributed RAM (LUTRAM) storage.
+//   Binary pointers with wrap bit for status flags:
+//     PTR_W = $clog2(DEPTH) + 1
+//     Full  : (wr_ptr[PTR_W-2:0] == rd_ptr[PTR_W-2:0]) && (wr_ptr[PTR_W-1] != rd_ptr[PTR_W-1])
+//     Empty : wr_ptr == rd_ptr
+//   Single clock domain; no CDC needed.
 //
 // Timing:
 //   All outputs registered. rd_valid lags rd_en by 1 cycle.

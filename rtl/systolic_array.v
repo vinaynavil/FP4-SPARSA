@@ -1,8 +1,9 @@
 `timescale 1ns / 1ps
-// ============================================================
-// Module : systolic_array
-// Project: FP4-SPARSA (v20 Final)
-// ============================================================
+// ============================================================================
+// Module      : systolic_array
+// Project     : FP4-SPARSA (FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array)
+// Version     : 20.0
+// ============================================================================
 module systolic_array (
     input  wire          clk,
     input  wire          rst,
@@ -17,11 +18,10 @@ module systolic_array (
     input  wire [15:0]   act_row2,
     input  wire [15:0]   act_row3,
     input  wire          valid_in,
-    output wire [17:0]   result_col0,
-    output wire [17:0]   result_col1,
-    output wire [17:0]   result_col2,
-    output wire [17:0]   result_col3,
-    output wire [3:0]    sat_flags,
+    output wire [12:0]   result_col0,
+    output wire [12:0]   result_col1,
+    output wire [12:0]   result_col2,
+    output wire [12:0]   result_col3,
     output wire          valid_out
 );
 
@@ -56,16 +56,16 @@ endfunction
 
 // ── build_dec_word ────────────────────────────────────────────
 function [31:0] build_dec_word;
-    input [15:0] packed;
+    input [15:0] raw_packed;
     begin
-        build_dec_word = { decode_fp4(packed[15:12]),
-                           decode_fp4(packed[11: 8]),
-                           decode_fp4(packed[ 7: 4]),
-                           decode_fp4(packed[ 3: 0]) };
+        build_dec_word = { decode_fp4(raw_packed[15:12]),
+                           decode_fp4(raw_packed[11: 8]),
+                           decode_fp4(raw_packed[ 7: 4]),
+                           decode_fp4(raw_packed[ 3: 0]) };
     end
 endfunction
 
-// ── calc_zero_mask (v20 mode-aware fix) ───────────────────────
+// ── calc_zero_mask (mode-aware zero detection) ────────────────
 // Returns 4-bit zero mask for 4 packed FP4/INT4 nibbles.
 // Prevents INT4 -8 (4'b1000) from being misidentified as zero.
 function [3:0] calc_zero_mask;
@@ -79,7 +79,7 @@ function [3:0] calc_zero_mask;
             calc_zero_mask[2] = (raw16[11: 8] == 4'b0000);
             calc_zero_mask[3] = (raw16[15:12] == 4'b0000);
         end else begin
-            // FP4 E2M1 mode: 3-bit check ignoring sign bit (+0 [0000] & -0 [1000])
+            // FP4 E2M1 mode: 2-bit exponent check (exp==00 flushes all subnormals & zeros to 0)
             calc_zero_mask[0] = (raw16[ 2: 1] == 2'b00);
             calc_zero_mask[1] = (raw16[ 6: 5] == 2'b00);
             calc_zero_mask[2] = (raw16[10: 9] == 2'b00);
@@ -88,7 +88,7 @@ function [3:0] calc_zero_mask;
     end
 endfunction
 
-// ── [U4] Ping-pong weight buffers ────────────────────────────
+// ── Ping-pong weight buffers ─────────────────────────────────
 reg [127:0] wdata_stage;       // Stage A: raw BRAM data registered
 reg         load_lo_q;         // Stage B trigger for rows 0-1
 reg         load_hi_q;         // Stage B trigger for rows 2-3
@@ -178,50 +178,103 @@ always @(posedge clk) begin
     end
 end
 
-// ── [U3] Activation pre-decode (column 0 only) ───────────────
-wire [31:0] act_dec_row [0:3];
-assign act_dec_row[0] = build_dec_word(act_row0);
-assign act_dec_row[1] = build_dec_word(act_row1);
-assign act_dec_row[2] = build_dec_word(act_row2);
-assign act_dec_row[3] = build_dec_word(act_row3);
+// ── Input Row Skew Registers ──────────────────────────────────
+// Row r gets act_row and valid_in delayed by exactly r cycles:
+// Row 0: 0 cycles, Row 1: 1 cycle, Row 2: 2 cycles, Row 3: 3 cycles.
+reg [15:0] act_r1_d1;
+reg        valid_r1_d1;
+
+reg [15:0] act_r2_d1, act_r2_d2;
+reg        valid_r2_d1, valid_r2_d2;
+
+reg [15:0] act_r3_d1, act_r3_d2, act_r3_d3;
+reg        valid_r3_d1, valid_r3_d2, valid_r3_d3;
+
+always @(posedge clk) begin
+    if (rst) begin
+        act_r1_d1   <= 16'd0;
+        valid_r1_d1 <= 1'b0;
+
+        act_r2_d1   <= 16'd0;
+        act_r2_d2   <= 16'd0;
+        valid_r2_d1 <= 1'b0;
+        valid_r2_d2 <= 1'b0;
+
+        act_r3_d1   <= 16'd0;
+        act_r3_d2   <= 16'd0;
+        act_r3_d3   <= 16'd0;
+        valid_r3_d1 <= 1'b0;
+        valid_r3_d2 <= 1'b0;
+        valid_r3_d3 <= 1'b0;
+    end else begin
+        // Row 1 (1 cycle delay)
+        act_r1_d1   <= act_row1;
+        valid_r1_d1 <= valid_in;
+
+        // Row 2 (2 cycles delay)
+        act_r2_d1   <= act_row2;
+        act_r2_d2   <= act_r2_d1;
+        valid_r2_d1 <= valid_in;
+        valid_r2_d2 <= valid_r2_d1;
+
+        // Row 3 (3 cycles delay)
+        act_r3_d1   <= act_row3;
+        act_r3_d2   <= act_r3_d1;
+        act_r3_d3   <= act_r3_d2;
+        valid_r3_d1 <= valid_in;
+        valid_r3_d2 <= valid_r3_d1;
+        valid_r3_d3 <= valid_r3_d2;
+    end
+end
+
+wire [15:0] act_row_del [0:3];
+assign act_row_del[0] = act_row0;
+assign act_row_del[1] = act_r1_d1;
+assign act_row_del[2] = act_r2_d2;
+assign act_row_del[3] = act_r3_d3;
+
+wire valid_row_del [0:3];
+assign valid_row_del[0] = valid_in;
+assign valid_row_del[1] = valid_r1_d1;
+assign valid_row_del[2] = valid_r2_d2;
+assign valid_row_del[3] = valid_r3_d3;
 
 // ── Interconnect wires ────────────────────────────────────────
 wire [15:0] act_wire       [0:3][0:3];   // [row][col]: raw activation into PE[r][c]
 wire [31:0] act_dec_wire   [0:3][0:3];   // [row][col]: decoded activation into PE[r][c]
 wire [3:0]  act_zero_wire  [0:3][0:3];   // [row][col]: activation zero mask into PE[r][c]
-wire [17:0] acc_wire       [0:4][0:3];   // [row_out][col]: partial accumulator (row 4 = output)
+wire [12:0] acc_wire       [0:4][0:3];   // [row_out][col]: partial accumulator (row 4 = output, 13-bit)
 wire        valid_wire     [0:3][0:3];
-wire        sat_flag_wire  [0:3][0:3];
 
 // Accumulator chain initialised to zero at top of each column
-assign acc_wire[0][0] = 18'd0;
-assign acc_wire[0][1] = 18'd0;
-assign acc_wire[0][2] = 18'd0;
-assign acc_wire[0][3] = 18'd0;
+assign acc_wire[0][0] = 13'd0;
+assign acc_wire[0][1] = 13'd0;
+assign acc_wire[0][2] = 13'd0;
+assign acc_wire[0][3] = 13'd0;
 
-// Column 0 activations: sourced directly from top-level inputs
-assign act_wire[0][0]      = act_row0;
-assign act_wire[1][0]      = act_row1;
-assign act_wire[2][0]      = act_row2;
-assign act_wire[3][0]      = act_row3;
+// Column 0 activations: sourced from delayed row inputs
+assign act_wire[0][0]      = act_row_del[0];
+assign act_wire[1][0]      = act_row_del[1];
+assign act_wire[2][0]      = act_row_del[2];
+assign act_wire[3][0]      = act_row_del[3];
 
-// Column 0 pre-computed activation zero masks (v20 mode-aware fix)
-assign act_zero_wire[0][0] = calc_zero_mask(act_row0, mode);
-assign act_zero_wire[1][0] = calc_zero_mask(act_row1, mode);
-assign act_zero_wire[2][0] = calc_zero_mask(act_row2, mode);
-assign act_zero_wire[3][0] = calc_zero_mask(act_row3, mode);
+// Column 0 pre-computed activation zero masks
+assign act_zero_wire[0][0] = calc_zero_mask(act_row_del[0], mode);
+assign act_zero_wire[1][0] = calc_zero_mask(act_row_del[1], mode);
+assign act_zero_wire[2][0] = calc_zero_mask(act_row_del[2], mode);
+assign act_zero_wire[3][0] = calc_zero_mask(act_row_del[3], mode);
 
 // Column 0 pre-decoded activations
-assign act_dec_wire[0][0]  = act_dec_row[0];
-assign act_dec_wire[1][0]  = act_dec_row[1];
-assign act_dec_wire[2][0]  = act_dec_row[2];
-assign act_dec_wire[3][0]  = act_dec_row[3];
+assign act_dec_wire[0][0]  = build_dec_word(act_row_del[0]);
+assign act_dec_wire[1][0]  = build_dec_word(act_row_del[1]);
+assign act_dec_wire[2][0]  = build_dec_word(act_row_del[2]);
+assign act_dec_wire[3][0]  = build_dec_word(act_row_del[3]);
 
-// valid_in broadcast to all rows, column 0
-assign valid_wire[0][0] = valid_in;
-assign valid_wire[1][0] = valid_in;
-assign valid_wire[2][0] = valid_in;
-assign valid_wire[3][0] = valid_in;
+// valid_in to column 0 rows
+assign valid_wire[0][0]    = valid_row_del[0];
+assign valid_wire[1][0]    = valid_row_del[1];
+assign valid_wire[2][0]    = valid_row_del[2];
+assign valid_wire[3][0]    = valid_row_del[3];
 
 // ── PE array ──────────────────────────────────────────────────
 genvar r, c;
@@ -252,10 +305,7 @@ generate
                 .acc_in          (acc_wire[r][c]),
                 .acc_out         (acc_wire[r+1][c]),     // feeds row+1
                 .valid_in        (valid_wire[r][c]),
-                .valid_out       (valid_wire[r][c+1]),
-                .skip_out        (),
-                .wgt_zero_out    (),
-                .sat_flag        (sat_flag_wire[r][c])
+                .valid_out       (valid_wire[r][c+1])
             );
         end
     end
@@ -278,10 +328,7 @@ generate
             .acc_in          (acc_wire[r][3]),
             .acc_out         (acc_wire[r+1][3]),
             .valid_in        (valid_wire[r][3]),
-            .valid_out       (),
-            .skip_out        (),
-            .wgt_zero_out    (),
-            .sat_flag        (sat_flag_wire[r][3])
+            .valid_out       ()
         );
     end
 endgenerate
@@ -303,39 +350,68 @@ pe_pipelined u_pe_r3c3 (
     .acc_in          (acc_wire[3][3]),
     .acc_out         (acc_wire[4][3]),
     .valid_in        (valid_wire[3][3]),
-    .valid_out       (),
-    .skip_out        (),
-    .wgt_zero_out    (),
-    .sat_flag        (sat_flag_wire[3][3])
+    .valid_out       ()
 );
 
-// ── Output assignments ────────────────────────────────────────
-assign result_col0 = acc_wire[4][0];
-assign result_col1 = acc_wire[4][1];
-assign result_col2 = acc_wire[4][2];
+// ── Output alignment (3 - c cycle delay per column) ───────────
+// Row 3 of column c finishes at cycle 7 + c.
+// Delay result_col c by (3 - c) cycles to align all outputs at cycle 10:
+//   col 0: 3 cycles delay
+//   col 1: 2 cycles delay
+//   col 2: 1 cycle delay
+//   col 3: 0 cycles delay
+
+// Col 0: 3-cycle delay
+reg [12:0] res_c0_d1, res_c0_d2, res_c0_d3;
+always @(posedge clk) begin
+    if (rst) begin
+        res_c0_d1 <= 13'd0; res_c0_d2 <= 13'd0; res_c0_d3 <= 13'd0;
+    end else begin
+        res_c0_d1 <= acc_wire[4][0];
+        res_c0_d2 <= res_c0_d1;
+        res_c0_d3 <= res_c0_d2;
+    end
+end
+assign result_col0 = res_c0_d3;
+
+// Col 1: 2-cycle delay
+reg [12:0] res_c1_d1, res_c1_d2;
+always @(posedge clk) begin
+    if (rst) begin
+        res_c1_d1 <= 13'd0; res_c1_d2 <= 13'd0;
+    end else begin
+        res_c1_d1 <= acc_wire[4][1];
+        res_c1_d2 <= res_c1_d1;
+    end
+end
+assign result_col1 = res_c1_d2;
+
+// Col 2: 1-cycle delay
+reg [12:0] res_c2_d1;
+always @(posedge clk) begin
+    if (rst) begin
+        res_c2_d1 <= 13'd0;
+    end else begin
+        res_c2_d1 <= acc_wire[4][2];
+    end
+end
+assign result_col2 = res_c2_d1;
+
+// Col 3: 0-cycle delay
 assign result_col3 = acc_wire[4][3];
 
-// ── Saturation flags (column OR-reduction) ────────────────────
-assign sat_flags[0] = sat_flag_wire[0][0] | sat_flag_wire[1][0] |
-                      sat_flag_wire[2][0] | sat_flag_wire[3][0];
-assign sat_flags[1] = sat_flag_wire[0][1] | sat_flag_wire[1][1] |
-                      sat_flag_wire[2][1] | sat_flag_wire[3][1];
-assign sat_flags[2] = sat_flag_wire[0][2] | sat_flag_wire[1][2] |
-                      sat_flag_wire[2][2] | sat_flag_wire[3][2];
-assign sat_flags[3] = sat_flag_wire[0][3] | sat_flag_wire[1][3] |
-                      sat_flag_wire[2][3] | sat_flag_wire[3][3];
-
-// ── valid_out: full convergence-latency shift register ───────
-// Total latency = vertical (4 rows × 4 stages = 16 cycles)
-//               + horizontal (3 cols × 1-cycle PE valid delay = 3 cycles)
-//               = 19 cycles.
-// Column 0 converges at posedge 15, column 3 at posedge 18.
-// valid_out must wait for the slowest column (col 3).
-reg [18:0] valid_pipe;
+// ── valid_out: 10-stage convergence-latency shift register ───
+// Total array latency = vertical (7 cycles: 4 PE stages + 3 cycles row skew)
+//                     + horizontal (3 cycles: 3 cols × 1-cycle skew)
+//                     = 10 clock cycles.
+// Column 0 output is valid at cycle 7 (aligned to cycle 10 via 3-cycle delay).
+// Column 3 converges at cycle 10.
+// valid_out aligns with converged outputs at cycle 10 (10-stage shift register).
+reg [9:0] valid_pipe;
 always @(posedge clk) begin
-    if (rst) valid_pipe <= 19'd0;
-    else     valid_pipe <= {valid_pipe[17:0], valid_in};
+    if (rst) valid_pipe <= 10'd0;
+    else     valid_pipe <= {valid_pipe[8:0], valid_in};
 end
-assign valid_out = valid_pipe[18];
+assign valid_out = valid_pipe[9];
 
 endmodule

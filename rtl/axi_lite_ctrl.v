@@ -1,7 +1,9 @@
 `timescale 1ns / 1ps
-// ============================================================
-// Module : axi_lite_ctrl  (v2 - BRAM weight buffer)
-// Project : FP4-SPARSA 
+// ============================================================================
+// Module      : axi_lite_ctrl
+// Project     : FP4-SPARSA (FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array)
+// Version     : 2.0
+// ============================================================================
 //
 // Register map (byte address, word-aligned):
 //   0x00  CTRL        [W/R]
@@ -10,8 +12,7 @@
 //           [2]  bank_switch
 //   0x04  STATUS      [R]
 //           [0]      valid_out
-//           [19:1]   reserved (0)
-//           [23:20]  sat_flags[3:0]
+//           [23:1]   reserved (0)
 //           [24]     fifo_empty
 //           [25]     fifo_full
 //           [31:26]  reserved (0)
@@ -22,25 +23,24 @@
 //                            then WADDR auto-increments
 //   0x14  SPARE       reserved
 //
-// CPU weight-load sequence:
-//   1. Write WADDR = 0                        (addr 0x08)
-//   2. For each of 8 BRAM words:
-//        Write WDATA_LO word 0 (bits  31: 0)  (addr 0x0C, 1st write)
-//        Write WDATA_LO word 1 (bits  63:32)  (addr 0x0C, 2nd write - latched into hi half)
-//        Write WDATA_LO word 2 (bits  95:64)  (addr 0x0C, 3rd write - latched into top-lo)
-//        Write WDATA_HI        (bits 127:96)  (addr 0x10) → commits + auto-increment
+// CPU weight-load sequence (4x4 matrix = 2 words of 128 bits):
+//   1. Load rows 0 & 1:
+//        Write WADDR    = 0x0                  (addr 0x08)
+//        Write WDATA_LO word 0 (bits  31: 0)   (addr 0x0C)
+//        Write WDATA_LO word 1 (bits  63:32)   (addr 0x0C)
+//        Write WDATA_LO word 2 (bits  95:64)   (addr 0x0C)
+//        Write WDATA_HI        (bits 127:96)   (addr 0x10) -> commits to BRAM addr 0
+//   2. Load rows 2 & 3:
+//        Write WADDR    = 0x4                  (addr 0x08)
+//        Write WDATA_LO word 0 (bits  31: 0)   (addr 0x0C)
+//        Write WDATA_LO word 1 (bits  63:32)   (addr 0x0C)
+//        Write WDATA_LO word 2 (bits  95:64)   (addr 0x0C)
+//        Write WDATA_HI        (bits 127:96)   (addr 0x10) -> commits to BRAM addr 4
 //
-// FIX vs original:
-//   - Double bram_din assignment in WDATA_HI case removed; the
-//     second assignment silently overwrote the first (dead code,
-//     Vivado warning "multiple drivers" on wire).
-//   - 128-bit word assembly corrected: WDATA_LO now accumulates
-//     all 96 lower bits across three 32-bit writes using a
-//     sub-address latch (wdata_lo_idx), removing the ambiguous
-//     comment about "two 32-bit writes".
-//   - wr_pending gating on s_axi_wready corrected: simultaneous
-//     AW+W acceptance no longer drops the write data.
-//   - bank_switch is a pulse (single-cycle), auto-cleared after 1 clk.
+// Implementation Notes:
+//   - WDATA_LO accumulates 96 lower bits across three 32-bit writes via wdata_lo_idx.
+//   - Writing WDATA_HI commits the assembled 128-bit word to BRAM and auto-increments WADDR.
+//   - bank_switch generates a 1-cycle auto-clearing pulse upon write to CTRL[2].
 // ============================================================
 module axi_lite_ctrl (
     // AXI-Lite global
@@ -76,9 +76,8 @@ module axi_lite_ctrl (
 
     // Status inputs from systolic array
     input  wire        valid_out,
-    input  wire [3:0]  sat_flags,
 
-    // Status inputs from activation FIFO (v20 Final)
+    // Status inputs from activation FIFO
     input  wire        fifo_full,
     input  wire        fifo_empty,
 
@@ -103,14 +102,7 @@ module axi_lite_ctrl (
 
     reg [2:0]  waddr_reg;
 
-    // ── Write channel ────────────────────────────────────────
-    //always @(posedge clk or negedge s_axi_aresetn) begin
-        // Use async reset here to mirror standard AXI practice;
-        // if you prefer sync reset throughout change to:
-        //   always @(posedge clk) begin if (!s_axi_aresetn) ...
-    //end
-
-    // Single synchronous always block (matches rest of design)
+    // ── Write channel (synchronous reset) ────────────────────
     always @(posedge s_axi_aclk) begin
         if (!s_axi_aresetn) begin
             s_axi_awready <= 1'b0;
@@ -144,7 +136,7 @@ module axi_lite_ctrl (
             end
 
             // ── Accept write data ────────────────────────────
-            if (s_axi_wvalid && !s_axi_wready && wr_pending) begin
+            if (s_axi_wvalid && !s_axi_wready && wr_pending && !s_axi_bvalid) begin
                 s_axi_wready <= 1'b1;
                 wr_pending   <= 1'b0;
 
@@ -156,15 +148,19 @@ module axi_lite_ctrl (
                             mode        <= s_axi_wdata[1];
                             bank_switch <= s_axi_wdata[2];   // 1-cycle pulse
                         end
+                        s_axi_bresp <= 2'b00; // OKAY
                     end
 
-                    3'b001: ;      // 0x04 STATUS - read-only, writes ignored
+                    3'b001: begin  // 0x04 STATUS - read-only, write returns SLVERR
+                        s_axi_bresp <= 2'b10; // SLVERR
+                    end
 
                     3'b010: begin  // 0x08 WADDR
                         if (s_axi_wstrb[0]) begin
                             waddr_reg    <= s_axi_wdata[2:0];
                             wdata_lo_idx <= 2'd0;  // reset sub-index on new WADDR
                         end
+                        s_axi_bresp <= 2'b00; // OKAY
                     end
 
                     3'b011: begin  // 0x0C WDATA_LO
@@ -176,39 +172,54 @@ module axi_lite_ctrl (
                                 if (s_axi_wstrb[1]) wdata_lo_reg[15: 8] <= s_axi_wdata[15: 8];
                                 if (s_axi_wstrb[2]) wdata_lo_reg[23:16] <= s_axi_wdata[23:16];
                                 if (s_axi_wstrb[3]) wdata_lo_reg[31:24] <= s_axi_wdata[31:24];
+                                wdata_lo_idx <= 2'd1;
+                                s_axi_bresp  <= 2'b00; // OKAY
                             end
                             2'd1: begin
                                 if (s_axi_wstrb[0]) wdata_lo_reg[39:32] <= s_axi_wdata[ 7: 0];
                                 if (s_axi_wstrb[1]) wdata_lo_reg[47:40] <= s_axi_wdata[15: 8];
                                 if (s_axi_wstrb[2]) wdata_lo_reg[55:48] <= s_axi_wdata[23:16];
                                 if (s_axi_wstrb[3]) wdata_lo_reg[63:56] <= s_axi_wdata[31:24];
+                                wdata_lo_idx <= 2'd2;
+                                s_axi_bresp  <= 2'b00; // OKAY
                             end
                             2'd2: begin
                                 if (s_axi_wstrb[0]) wdata_lo_reg[71:64] <= s_axi_wdata[ 7: 0];
                                 if (s_axi_wstrb[1]) wdata_lo_reg[79:72] <= s_axi_wdata[15: 8];
                                 if (s_axi_wstrb[2]) wdata_lo_reg[87:80] <= s_axi_wdata[23:16];
                                 if (s_axi_wstrb[3]) wdata_lo_reg[95:88] <= s_axi_wdata[31:24];
+                                wdata_lo_idx <= 2'd3;  // Advances to overflow slot
+                                s_axi_bresp  <= 2'b00; // OKAY
                             end
-                            default: ;
+                            default: begin
+                                // Reject excess write before WDATA_HI to preserve assembled buffer
+                                s_axi_bresp  <= 2'b10; // SLVERR (buffer full)
+                            end
                         endcase
-                        if (wdata_lo_idx != 2'd2)
-                            wdata_lo_idx <= wdata_lo_idx + 2'd1;
                     end
 
                     3'b100: begin  // 0x10 WDATA_HI - commits full 128-bit word
-                        // Assemble: [127:96]=WDATA_HI, [95:0]=wdata_lo_reg
-                        bram_din  <= {s_axi_wdata, wdata_lo_reg};
+                        // Assemble: [127:96]=WDATA_HI (strobe masked), [95:0]=wdata_lo_reg
+                        bram_din  <= {
+                            s_axi_wstrb[3] ? s_axi_wdata[31:24] : 8'd0,
+                            s_axi_wstrb[2] ? s_axi_wdata[23:16] : 8'd0,
+                            s_axi_wstrb[1] ? s_axi_wdata[15: 8] : 8'd0,
+                            s_axi_wstrb[0] ? s_axi_wdata[ 7: 0] : 8'd0,
+                            wdata_lo_reg
+                        };
                         bram_addr <= waddr_reg;
                         bram_ena  <= 1'b1;
                         waddr_reg    <= waddr_reg + 3'd1;  // auto-increment
                         wdata_lo_idx <= 2'd0;              // reset for next word
+                        s_axi_bresp  <= 2'b00; // OKAY
                     end
 
-                    default: ;
+                    default: begin // 0x14 SPARE, 0x18, 0x1C (unmapped addresses)
+                        s_axi_bresp <= 2'b10; // SLVERR
+                    end
 
                 endcase
 
-                s_axi_bresp  <= 2'b00;
                 s_axi_bvalid <= 1'b1;
             end else begin
                 s_axi_wready <= 1'b0;
@@ -221,7 +232,7 @@ module axi_lite_ctrl (
     end
 
     // ── Read channel ─────────────────────────────────────────
-    wire [31:0] status_reg = {6'd0, fifo_full, fifo_empty, sat_flags, 19'd0, valid_out};
+    wire [31:0] status_reg = {6'd0, fifo_full, fifo_empty, 23'd0, valid_out};
     wire [31:0] ctrl_reg   = {29'd0, bank_switch, mode, sparse_en};
 
     always @(posedge s_axi_aclk) begin
@@ -231,7 +242,7 @@ module axi_lite_ctrl (
             s_axi_rresp   <= 2'b00;
             s_axi_rdata   <= 32'd0;
         end else begin
-            if (s_axi_arvalid && !s_axi_arready) begin
+            if (s_axi_arvalid && !s_axi_arready && !s_axi_rvalid) begin
                 s_axi_arready <= 1'b1;
                 s_axi_rresp   <= 2'b00;
                 s_axi_rvalid  <= 1'b1;

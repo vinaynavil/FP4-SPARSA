@@ -1,8 +1,9 @@
 `timescale 1ns / 1ps
-// ============================================================
-// Module : fp4_sparsa_4x4
-// Project : FP4-SPARSA 
-// ============================================================
+// ============================================================================
+// Module      : fp4_sparsa_4x4
+// Project     : FP4-SPARSA (FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array)
+// Version     : 20.0
+// ============================================================================
 module fp4_sparsa_4x4 (
     input  wire        s_axi_aclk,
     input  wire        s_axi_aresetn,
@@ -28,11 +29,10 @@ module fp4_sparsa_4x4 (
     input  wire [15:0]  act_row2,
     input  wire [15:0]  act_row3,
     input  wire         act_fifo_wr_en,
-    output wire [17:0]  result_col0,
-    output wire [17:0]  result_col1,
-    output wire [17:0]  result_col2,
-    output wire [17:0]  result_col3,
-    output wire [3:0]   sat_flags,
+    output wire [12:0]  result_col0,
+    output wire [12:0]  result_col1,
+    output wire [12:0]  result_col2,
+    output wire [12:0]  result_col3,
     output wire         valid_out,
     output wire         fifo_full,
     output wire         fifo_empty
@@ -67,7 +67,6 @@ module fp4_sparsa_4x4 (
         .s_axi_rvalid(s_axi_rvalid), 
         .s_axi_rready(s_axi_rready),
         .valid_out(valid_out), 
-        .sat_flags(sat_flags),
         .fifo_full(fifo_full), 
         .fifo_empty(fifo_empty),
         .sparse_en(sparse_en_w), 
@@ -79,16 +78,11 @@ module fp4_sparsa_4x4 (
     );
 
     // ── BRAM weight buffer ────────────────────────────────────
-    // FIX: BRAM Port B read address is registered 1 cycle behind
-    // the write address. This ensures dout_b captures the data
-    // written at cycle N when sampled at cycle N+1, which is when
-    // load_lo_r / load_hi_r fire (they are also registered 1 cycle).
-    // Sequence:
-    //   Cycle N:   bram_ena=1, addr_a=X, write data into mem[X]
-    //              addr_b = addr_a_r (previous addr, e.g. X-1) → dout_b = old
-    //   Cycle N+1: bram_ena=0
-    //              addr_b = X (registered) → dout_b = mem[X] (just written)
-    //              load_lo_r / load_hi_r fire → systolic_array latches dout_b ✓
+    // Port B read address is registered 1 cycle behind the write address.
+    // Total read latency from write to valid dout_b is 2 clock cycles:
+    //   Cycle N   : bram_ena asserts, addr_a=X written into mem[X]
+    //   Cycle N+1 : bram_raddr_r latches X, presenting addr_b to BRAM
+    //   Cycle N+2 : dout_b outputs mem[X]; load_lo_r / load_hi_r fire to latch data
     reg [2:0] bram_raddr_r;
     always @(posedge s_axi_aclk) begin
         if (!s_axi_aresetn) bram_raddr_r <= 3'd0;
@@ -107,11 +101,6 @@ module fp4_sparsa_4x4 (
     );
 
     // load_lo_r / load_hi_r: 2-cycle delayed to match BRAM read latency.
-    // Cycle N:   bram_ena fires, bram_waddr_w=X, write mem[X]
-    //            bram_raddr_r = prev_addr (1c lag)
-    // Cycle N+1: bram_raddr_r = X, addr_b presented to BRAM
-    //            dout_b = mem[prev] (stale)
-    // Cycle N+2: dout_b = mem[X] (valid) <- load fires HERE
     always @(posedge s_axi_aclk) begin
         if (!s_axi_aresetn) begin
             load_lo_r0 <= 1'b0; load_hi_r0 <= 1'b0;
@@ -149,7 +138,6 @@ module fp4_sparsa_4x4 (
         .valid_in(fifo_rd_valid),
         .result_col0(result_col0), .result_col1(result_col1),
         .result_col2(result_col2), .result_col3(result_col3),
-        .sat_flags(sat_flags),
         .valid_out(valid_out)
     );
 
