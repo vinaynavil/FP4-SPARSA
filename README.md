@@ -1,6 +1,6 @@
 <meta name="google-site-verification" content="818WzEt_LHBOTPGBvJDV6GWr8nLYf9EhoDYlegvFvAM" />
 
-# FP4-SPARSA: Sparsity-Aware FP4 Systolic Array MAC Accelerator
+# FP4-SPARSA: FP4 Sparse Precision Accelerator using a Reconfigurable Systolic Array
 
 An FPGA accelerator for low-precision neural-network inference built around a **4×4 weight-stationary systolic array** and **FP4 E2M1** arithmetic.  
 It combines **lane-wise operand isolation**, **on-chip dual-port BRAM weight storage with ping-pong buffering**, an **activation FIFO**, and a lightweight **AXI-Lite control path** for a high-frequency, energy-efficient inference engine.
@@ -24,37 +24,34 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────┐
-│                fp4_sparsa_4x4 (Top)                     │
-│                                                         │
-│  ┌─────────────────┐        ┌────────────────────────┐  │
-│  │  AXI-Lite       │        │   Weight BRAM          │  │
-│  │  Controller     │        │   (2× BRAM36)          │  │
-│  │  (axi_lite_ctrl)│        │   (8×128-bit)          │  │
-│  └────────┬────────┘        └───────────┬────────────┘  │
-│           │                             │               │
-│  ┌────────▼─────────────────────────────▼────────────┐  │
-│  │            systolic_array (4×4 Grid)              │  │
-│  │                                                   │  │
-│  │  FP4 decode (decode_fp4) & raw zero-mask check    │  │
-│  │  with double-banked weight storage (Bank A / B)   │  │
-│  │                                                   │  │
-│  │  ┌──────────────┐      ┌──────────────┐           │  │
-│  │  │ pe_pipelined │      │ pe_pipelined │   ...     │  │
-│  │  │  (4-stage)   │      │  (4-stage)   │           │  │
-│  │  │              │      │              │           │  │
-│  │  │  Stage 1: Iso│      │  Stage 1: Iso│           │  │
-│  │  │  Stage 2: DSP│      │  Stage 2: DSP│           │  │
-│  │  │  Stage 3a:Add│      │  Stage 3a:Add│           │  │
-│  │  │  Stage 3b:Acc│      │  Stage 3b:Acc│           │  │
-│  │  └──────────────┘      └──────────────┘           │  │
-│  └───────────────────────────────────────────────────┘  │
-│           ▲                                             │
-│  ┌────────┴────────┐                                    │
-│  │ Activation FIFO │                                    │
-│  │  (depth-64)     │                                    │
-│  └─────────────────┘                                    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                     fp4_sparsa_4x4 (Top)                                     │
+│                                                                                              │
+│                              ┌─────────────────────────┐      ┌─────────────────────────┐    │
+│                              │ AXI-Lite Controller     │──wr─►│ Weight BRAM             │    │
+│                              │ (axi_lite_ctrl)         │ port │ (2× BRAM36, 8×128-bit)  │    │
+│                              └────────────┬────────────┘      └────────────┬────────────┘    │
+│                                           │ (Control: sparse_en, mode)     │ (128-bit Wgt)   │
+│                                           ▼                                ▼                 │
+│  ┌────────────────┐          ┌─────────────────────────────────────────────────────────────┐ │
+│  │Activation FIFO │          │                  systolic_array (4×4 Grid)                  │ │
+│  │(depth-64)      │          │                                                             │ │
+│  │                │          │   FP4 decode (decode_fp4) & zero-mask logic (Bank A / B)    │ │
+│  │4 rows stream in│          │                                                             │ │
+│  │(Left-to-Right) │─────────►│ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │ │
+│  │                │          │ │PE (Col 0)  │ │PE (Col 1)  │ │PE (Col 2)  │ │PE (Col 3)  │ │ │
+│  │act_row0        │          │ │ (4-stage)  │ │ (4-stage)  │ │ (4-stage)  │ │ (4-stage)  │ │ │
+│  │act_row1        │          │ │            │ │            │ │            │ │            │ │ │
+│  │act_row2        │          │ │Stage 1: Iso│ │Stage 1: Iso│ │Stage 1: Iso│ │Stage 1: Iso│ │ │
+│  │act_row3        │          │ │Stage 2: DSP│ │Stage 2: DSP│ │Stage 2: DSP│ │Stage 2: DSP│ │ │
+│  │                │          │ │Stage 3a:Add│ │Stage 3a:Add│ │Stage 3a:Add│ │Stage 3a:Add│ │ │
+│  └────────────────┘          │ │Stage 3b:Acc│ │Stage 3b:Acc│ │Stage 3b:Acc│ │Stage 3b:Acc│ │ │
+│                              │ └────────────┘ └────────────┘ └────────────┘ └────────────┘ │ │
+│                              └───────┬──────────────┬──────────────┬──────────────┬────────┘ │
+│                                      │              │              │              │          │
+│                                      ▼              ▼              ▼              ▼          │
+│                                 result_col0    result_col1    result_col2    result_col3     │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key design choices:**
@@ -104,7 +101,7 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 | Stage | Name | Operation |
 |---|---|---|
 | **Stage 1** | Operand Register & Isolation | Registers FP4 activation/weight inputs; evaluates `calc_zero_mask` and clamps operands (`w_iso`, `a_iso`) to 0 if zero detected |
-| **Stage 2** | Parallel Multiplication | $4 \times$ DSP48E1 signed $8 \times 8$ multiplications (`use_dsp="yes"`, `MREG=1`, `AREG=1`) |
+| **Stage 2** | Parallel Multiplication | $4 \times$ DSP48E1 signed $8 \times 8$ multiplications (`use_dsp="yes"`) |
 | **Stage 3a** | Pairwise Adder Tree | Level-1 registered summation of lane products (`prod0+prod1`, `prod2+prod3`) |
 | **Stage 3b** | Accumulator & Saturation | 18-bit accumulation with overflow detection and clipping to 18'h1FFFF / 18'h20000; Vivado maps this stage onto one additional DSP48E1 per PE |
 
@@ -148,20 +145,28 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 |---|---|
 | **Target Device** | Xilinx Kintex-7 (`xc7k160tfbg676-2`) |
 | **Clock Frequency** | **350.017 MHz** ($T_{clk} = 2.857\text{ ns}$) |
-| **Worst Negative Slack (WNS)** | **+0.205 ns** (Timing Closed) |
+| **Worst Negative Slack (WNS)** | **+0.235 ns** (Timing Closed) |
 | **Worst Hold Slack (WHS)** | **+0.082 ns** |
 | **DSP48E1 Slice Usage** | **80 / 600 (13.33%)** — 64 multiply-lane DSPs + 16 accumulate-stage DSPs (1 per PE) |
-| **Slice LUT Footprint** | **1,445 / 101,400 (1.43%)** |
-| **Flip-Flop Storage** | **3,380 / 202,800 (1.67%)** |
+| **Slice LUT Footprint** | **1,163 / 101,400 (1.15%)** |
+| **Flip-Flop Storage** | **2,825 / 202,800 (1.39%)** |
 | **Block RAM (BRAM36)** | **2 / 325 (0.62%)** |
-| **Dynamic Power** | **0.042 W** (42 mW) |
+| **Dynamic Power** | **0.036 W** (36 mW) |
 | **Static Power** | **0.112 W** (112 mW) |
-| **Total On-Chip Power** | **0.154 W** (154 mW) (Medium confidence, ~17% SAIF net coverage) |
+| **Total On-Chip Power** | **0.147 W** (147 mW) (SAIF-verified switching activity) |
 | **Peak Throughput** | **44.8 GOPS** |
-| **Energy Efficiency** | **290.9 GOPS/W** (Total power basis) |
-| **Verification Suite** | **22 / 22 Testcases PASS** in Vivado XSim (`tb_fp4_sparsa_4x4.v`) |
+| **Energy Efficiency** | **304.8 GOPS/W** (Total power basis) |
+| **Verification Suite** | **15 / 15 Testcases PASS** in Vivado XSim and Icarus Verilog (`tb_fp4_sparsa_4x4.v`) |
 
-**Toolflow:** Vivado 2024.2 | `phys_opt_design (ExploreWithRemap)` | `MREG=1`, `AREG=1` on all DSP48E1 instances
+**Toolflow:** Vivado 2024.2 | `phys_opt_design (ExploreWithRemap)`
+
+### Power Analysis
+
+- 5-point sparsity sweep (0–100% activation sparsity, same weights): dynamic power drops monotonically, 0.053 W → 0.051 W
+- SAIF toggle analysis (166-cycle sim): 11.3% fewer PE data toggles (10,419 → 9,242), 17.08% fewer interconnect toggles, 7.91% fewer total chip toggles
+- Throughput and latency unaffected
+
+Confirms zero-lane operand isolation cuts switching activity in silicon, not just in theory.
 
 ---
 
@@ -174,8 +179,6 @@ The repository includes both the **Verilog RTL** and a **Python demo** for FP4 q
 | Weight Sparsity (FP4 + FTZ) | **25.3%** |
 | Activation Sparsity (ReLU + FP4) | **50.5%** |
 | **MAC Operations Skipped (software model)** | **63.0%** |
-
-A controlled 5-point hardware sweep (0%, 25%, 50%, 75%, 100% activation sparsity, same weight matrix throughout) measured dynamic power moving monotonically from 0.053 W down to 0.051 W — a real, direction-consistent, whole-design measurement, not a software-projected estimate. Sparsity here changes power only; it does not change cycle count or throughput.
 
 ### Accuracy Comparison
 
@@ -204,7 +207,7 @@ python ui.py
 The Tkinter UI features:
 - Live CIFAR-10 test vector preview & ground truth verification
 - Side-by-side FP32 vs FP4 model prediction & confidence cards
-- 10 Kintex-7 physical metric tiles (`350.017 MHz`, `WNS +0.205ns`, `1,445 LUTs`, `0.154W`, `290.9 GOPS/W`)
+- 10 Kintex-7 physical metric tiles (`350.017 MHz`, `WNS +0.235ns`, `1,163 LUTs`, `0.147W`, `304.8 GOPS/W`)
 - Animated progress bars for accuracy and sparsity metrics
 
 ---
@@ -221,7 +224,7 @@ FP4-SPARSA/
 │   ├── weight_bram.v         # Dual-port BRAM weight buffer
 │   └── act_fifo.v            # Depth-64 LUTRAM Activation FIFO
 ├── tb/
-│   ├── tb_fp4_sparsa_4x4.v   # Main testbench (22/22 testcases PASS)
+│   ├── tb_fp4_sparsa_4x4.v   # Main testbench (15/15 testcases PASS)
 │   ├── tb_axi_lite_ctrl.v    # AXI controller unit testbench
 │   └── tb_weight_bram.v      # Weight BRAM unit testbench
 ├── constraints/
